@@ -141,6 +141,9 @@ const createEntityHandler = (entityName) => {
       return data;
     },
 
+    /**
+     * @param {Record<string, any>} data
+     */
     create: async (data = {}) => {
       // Map owner_email to owner_id if it's in the creation payload
       const payload = { ...data };
@@ -173,6 +176,10 @@ const createEntityHandler = (entityName) => {
       return inserted;
     },
 
+    /**
+     * @param {any} id
+     * @param {Record<string, any>} data
+     */
     update: async (id, data = {}) => {
       // Prevent updating the primary key if it's in data
       const updateData = { ...data };
@@ -291,6 +298,16 @@ export const db = {
     }
   },
 
+  /**
+   * @type {Record<string, {
+   *   filter: (filters?: any, order?: string | null, limit?: number | null) => Promise<any[]>,
+   *   list: (order?: string | null, limit?: number | null) => Promise<any[]>,
+   *   get: (id: any) => Promise<any>,
+   *   create: (data?: any) => Promise<any>,
+   *   update: (id: any, data?: any) => Promise<any>,
+   *   delete: (id: any) => Promise<boolean>
+   * }>}
+   */
   entities: new Proxy({}, {
     get: (target, name) => {
       return createEntityHandler(name);

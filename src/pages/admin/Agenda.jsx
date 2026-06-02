@@ -178,7 +178,7 @@ export default function Agenda() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingAppt, setEditingAppt] = useState(null);
-  const [form, setForm] = useState({ status: "agendado" });
+  const [form, setForm] = useState(/** @type {any} */ ({ status: "agendado" }));
 
   useEffect(() => {
     if (!user) return;

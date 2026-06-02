@@ -52,7 +52,7 @@ export default function ClientDashboard() {
   // Simple AI-like recommendation based on data
   const lastApt = appointments.find(a => a.status === "concluido");
   const daysSinceLast = lastApt
-    ? Math.floor((Date.now() - new Date(lastApt.date)) / 86400000)
+    ? Math.floor((Date.now() - new Date(lastApt.date).getTime()) / 86400000)
     : null;
   const aiMessage = daysSinceLast === null
     ? "Agende seu primeiro corte e comece sua jornada premium conosco."

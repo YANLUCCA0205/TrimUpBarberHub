@@ -34,7 +34,7 @@ const TABS = ["Configurações", "Barbeiros", "Serviços"];
 export default function ShopSettings() {
   const { user } = useAuth();
   const [shop, setShop] = useState(null);
-  const [form, setForm] = useState({});
+  const [form, setForm] = useState(/** @type {any} */ ({}));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -43,14 +43,14 @@ export default function ShopSettings() {
   // Barbers state
   const [barbers, setBarbers] = useState([]);
   const [editingBarber, setEditingBarber] = useState(null);
-  const [barberForm, setBarberForm] = useState({});
+  const [barberForm, setBarberForm] = useState(/** @type {any} */ ({}));
   const [showBarberForm, setShowBarberForm] = useState(false);
   const [linkRequests, setLinkRequests] = useState([]);
 
   // Services state
   const [services, setServices] = useState([]);
   const [editingService, setEditingService] = useState(null);
-  const [serviceForm, setServiceForm] = useState({ duration_minutes: "30", category: "corte", is_active: true });
+  const [serviceForm, setServiceForm] = useState(/** @type {any} */ ({ duration_minutes: "30", category: "corte", is_active: true }));
   const [showServiceForm, setShowServiceForm] = useState(false);
 
   useEffect(() => {

@@ -106,7 +106,7 @@ export default function Dashboard() {
       uniqueClients: [...new Set(allAppointments.map(a => a.client_email))].length,
       cancellationRate: allAppointments.length > 0 ? Math.round((allAppointments.filter(a => a.status === "cancelado").length / allAppointments.length) * 100) : 0,
     };
-    const res = await db.integrations.Core.InvokeLLM({
+    const res = await db.integrations.Core.InvokeLLM(/** @type {any} */ ({
       prompt: `Você é um consultor especialista em barbearias. Analise os dados reais desta barbearia: ${JSON.stringify(stats)}.
       Gere 4 insights práticos e específicos. Inclua: análise de horários de pico, otimização de equipe, recomendações baseadas na taxa de cancelamento e oportunidades de crescimento.
       Seja direto, acionável e use emojis.`,
@@ -126,7 +126,7 @@ export default function Dashboard() {
           }
         }
       },
-    });
+    }));
     setAiInsights(res.insights || []);
     setLoadingAI(false);
   }

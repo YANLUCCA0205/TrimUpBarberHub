@@ -22,7 +22,7 @@ export default function SiteOwnerAssinaturas() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
+  const [form, setForm] = useState(/** @type {any} */ ({}));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

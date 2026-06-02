@@ -192,12 +192,12 @@ export default function ClientHeatmap({ clients = [] }) {
       ) : (
         <MapContainer
           style={{ height: "400px", width: "100%", background: "#0a0a14" }}
-          center={[points[0].lat, points[0].lng]}
+          {.../** @type {any} */ ({ center: [points[0].lat, points[0].lng] })}
           zoom={12}
           zoomControl={true}
           attributionControl={false}
         >
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" maxZoom={18} />
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" {.../** @type {any} */ ({ maxZoom: 18 })} />
           <FitBounds points={points} />
           {points.map(p => {
             const normalized = maxClients > 1 ? (p.clients - 1) / (maxClients - 1) : 1;
@@ -208,7 +208,7 @@ export default function ClientHeatmap({ clients = [] }) {
               <CircleMarker
                 key={p.key}
                 center={[p.lat, p.lng]}
-                radius={radiusPx}
+                {.../** @type {any} */ ({ radius: radiusPx })}
                 pathOptions={{
                   color: "hsl(38,92%,50%)",
                   fillColor: "hsl(38,92%,50%)",
@@ -217,7 +217,7 @@ export default function ClientHeatmap({ clients = [] }) {
                   opacity: 0.8,
                 }}
               >
-                <Popup className="leaflet-popup-dark">
+                <Popup {.../** @type {any} */ ({ className: "leaflet-popup-dark" })}>
                   <div style={{ background: "#12131f", border: "1px solid #2a2b3d", borderRadius: "10px", padding: "12px 14px", minWidth: "160px", color: "#f5f5f5", fontFamily: "Inter, sans-serif" }}>
                     <p style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>{p.name}{p.city ? `, ${p.city}` : ""}</p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>

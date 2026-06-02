@@ -6,18 +6,18 @@ import { motion } from "framer-motion";
 import db from "@/lib/db";
 
 const features = [
-{ icon: Calendar, title: "Agendamento Inteligente", desc: "IA sugere horários, barbeiros e cortes ideais baseados no seu perfil." },
-{ icon: TrendingUp, title: "BI & Analytics", desc: "Dashboards estratégicos com heatmaps, métricas e previsões de demanda." },
-{ icon: Users, title: "CRM Integrado", desc: "Gestão completa de clientes com fidelização, cashback e gamificação." },
-{ icon: Sparkles, title: "IA Estratégica", desc: "Recomendações automáticas de promoções, campanhas e retenção." },
-{ icon: Shield, title: "Marketplace", desc: "Venda produtos diretamente pela plataforma com controle de estoque." },
-{ icon: Zap, title: "Pagamentos", desc: "PIX, cartão e split automático entre barbeiro e barbearia." }];
+  { icon: Calendar, title: "Agendamento Inteligente", desc: "IA sugere horários, barbeiros e cortes ideais baseados no seu perfil." },
+  { icon: TrendingUp, title: "BI & Analytics", desc: "Dashboards estratégicos com heatmaps, métricas e previsões de demanda." },
+  { icon: Users, title: "CRM Integrado", desc: "Gestão completa de clientes com fidelização, cashback e gamificação." },
+  { icon: Sparkles, title: "IA Estratégica", desc: "Recomendações automáticas de promoções, campanhas e retenção." },
+  { icon: Shield, title: "Marketplace", desc: "Venda produtos diretamente pela plataforma com controle de estoque." },
+  { icon: Zap, title: "Pagamentos", desc: "PIX, cartão e split automático entre barbeiro e barbearia." }];
 
 const stats = [
-{ value: "50k+", label: "Cortes realizados" },
-{ value: "2.5k+", label: "Barbeiros ativos" },
-{ value: "98%", label: "Taxa de satisfação" },
-{ value: "40%", label: "Aumento em retenção" }];
+  { value: "50k+", label: "Cortes realizados" },
+  { value: "2.5k+", label: "Barbeiros ativos" },
+  { value: "98%", label: "Taxa de satisfação" },
+  { value: "40%", label: "Aumento em retenção" }];
 
 const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } };
 
@@ -116,7 +116,7 @@ export default function Landing() {
       <section id="stats" className="py-16 px-6 border-y border-border/30">
         <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
           {stats.map((s, i) =>
-          <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="text-center">
+            <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="text-center">
               <div className="text-3xl md:text-4xl font-bold text-gradient mb-1">{s.value}</div>
               <div className="text-sm text-muted-foreground">{s.label}</div>
             </motion.div>
@@ -133,14 +133,14 @@ export default function Landing() {
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((f, i) =>
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.08 }}
-              className="group p-6 rounded-2xl bg-card/50 border border-border/50 hover:border-primary/30 hover:bg-card transition-all duration-300">
-              
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08 }}
+                className="group p-6 rounded-2xl bg-card/50 border border-border/50 hover:border-primary/30 hover:bg-card transition-all duration-300">
+
                 <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                   <f.icon className="w-5 h-5 text-primary" />
                 </div>
@@ -169,9 +169,8 @@ export default function Landing() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.1 }}
-                  className={`relative p-8 rounded-2xl border transition-all ${
-                    isPopular ? "bg-card border-primary/50 shadow-lg shadow-primary/5" : "bg-card/50 border-border/50"
-                  }`}
+                  className={`relative p-8 rounded-2xl border transition-all ${isPopular ? "bg-card border-primary/50 shadow-lg shadow-primary/5" : "bg-card/50 border-border/50"
+                    }`}
                 >
                   {isPopular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-primary text-primary-foreground text-xs font-medium">
@@ -210,9 +209,9 @@ export default function Landing() {
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Scissors className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-bold text-sm">BARBERHUB OS</span>
+            <span className="font-bold text-sm">TrimUp Barber</span>
           </div>
-          <p className="text-sm text-muted-foreground">© 2026  Barber Hub. Todos os direitos reservados. P</p>
+          <p className="text-sm text-muted-foreground">© 2026  TrimUp Barber. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>);

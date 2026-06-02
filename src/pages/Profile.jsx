@@ -29,7 +29,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({});
+  const [form, setForm] = useState(/** @type {any} */ ({}));
   const [tab, setTab] = useState("historico");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 

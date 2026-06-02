@@ -209,6 +209,7 @@ export default function Agenda() {
   }
 
   async function saveAppointment() {
+    if (!shop) { toast.error('Barbearia não encontrada'); return; }
     if (!form.barber_id || !form.client_name || !form.service_name || !form.date || !form.time) {
       toast.error("Preencha os campos obrigatórios");
       return;
@@ -234,7 +235,7 @@ export default function Agenda() {
       return;
     }
     const barber = barbers.find(b => b.id === form.barber_id);
-    const data = { ...form, barber_name: barber?.name, client_email: form.client_email || "" };
+    const data = { ...form, barber_name: barber?.name, client_email: form.client_email || "", shop_id: shop.id };
     if (editingAppt) {
       const updated = await db.entities.Appointment.update(editingAppt.id, data);
       setAppointments(appts => appts.map(a => a.id === editingAppt.id ? updated : a));

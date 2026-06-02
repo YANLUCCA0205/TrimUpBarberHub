@@ -16,10 +16,23 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-const mockChart = [
-  { day: "Seg", valor: 320 }, { day: "Ter", valor: 480 }, { day: "Qua", valor: 390 },
-  { day: "Qui", valor: 520 }, { day: "Sex", valor: 680 }, { day: "Sáb", valor: 890 }, { day: "Dom", valor: 200 },
-];
+// Calculate real weekly revenue from appointments
+function getWeeklyRevenue(appointments) {
+  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const today = new Date();
+  const weekData = [];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayRevenue = appointments
+      .filter(a => a.date === dateStr && a.status === 'concluido')
+      .reduce((sum, a) => sum + (a.price || 0), 0);
+    weekData.push({ day: days[d.getDay()], valor: dayRevenue });
+  }
+  return weekData;
+}
 
 export default function BarberDashboard() {
   const { user } = useAuth();
@@ -34,12 +47,12 @@ export default function BarberDashboard() {
   useEffect(() => {
     async function load() {
       if (!user) return;
-      const barbers = await db.entities.Barber.filter({ owner_email: user.email });
+      const barbers = await db.entities.Barber.filter({ profile_id: user.id });
       if (barbers.length > 0) {
         const currentBarber = barbers[0];
         setBarber(currentBarber);
         const [a, s, membershipRes] = await Promise.all([
-          db.entities.Appointment.filter({ barber_id: currentBarber.id }, "-date", 20),
+          db.entities.Appointment.filter({ barber_id: currentBarber.id }, "-date", 500),
           db.entities.Service.filter({ barber_id: currentBarber.id }),
           currentBarber.shop_id 
             ? supabase.from('shop_memberships').select('role').eq('shop_id', currentBarber.shop_id).eq('profile_id', user.id).maybeSingle()
@@ -56,7 +69,7 @@ export default function BarberDashboard() {
   }, [user]);
 
   async function createBarberProfile() {
-    const b = await db.entities.Barber.create({ name: user.full_name || "Meu Perfil", owner_email: user.email });
+    const b = await db.entities.Barber.create({ name: user.full_name || "Meu Perfil", owner_email: user.email, profile_id: user.id });
     setBarber(b);
   }
 
@@ -96,8 +109,10 @@ export default function BarberDashboard() {
     );
   }
 
-  const todayAppointments = appointments.filter(a => a.date === new Date().toISOString().split("T")[0]);
+  const today = new Date().toISOString().split('T')[0];
+  const todayAppointments = appointments.filter(a => a.date === today).sort((a, b) => a.time?.localeCompare(b.time));
   const totalRevenue = appointments.filter(a => a.status === "concluido").reduce((sum, a) => sum + (a.price || 0), 0);
+  const chartData = getWeeklyRevenue(appointments);
 
   const stats = [
     { icon: DollarSign, value: `R$${totalRevenue.toLocaleString()}`, label: "Faturamento", trend: 12 },
@@ -122,6 +137,34 @@ export default function BarberDashboard() {
         )}
       </div>
 
+      {/* Agenda de Hoje */}
+      <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800 mb-6">
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-amber-500" />
+          Agenda de Hoje
+        </h2>
+        {todayAppointments.length === 0 ? (
+          <p className="text-zinc-400 text-sm">Nenhum agendamento para hoje.</p>
+        ) : (
+          <div className="space-y-3">
+            {todayAppointments.map(appt => (
+              <div key={appt.id} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-xl">
+                <div>
+                  <p className="text-white font-medium">{appt.client_name}</p>
+                  <p className="text-zinc-400 text-sm">{appt.service_name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-amber-500 font-medium">{appt.time}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${appt.status === 'concluido' ? 'bg-green-500/20 text-green-400' : appt.status === 'confirmado' ? 'bg-blue-500/20 text-blue-400' : appt.status === 'cancelado' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                    {appt.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <StatsGrid stats={stats} />
 
       {/* Chart */}
@@ -129,7 +172,7 @@ export default function BarberDashboard() {
         <h3 className="font-semibold mb-4">Faturamento semanal</h3>
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={mockChart}>
+            <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="hsl(38,92%,50%)" stopOpacity={0.3} />

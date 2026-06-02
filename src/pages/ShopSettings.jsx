@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Store, Palette, MapPin, Phone, Save, Plus, Trash2, Edit2, X, Check, Scissors, Users } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ImageUpload from '../components/ImageUpload';
 
 const SECTION = ({ icon: Icon, title, children }) => (
   <div className="p-6 rounded-2xl bg-card border border-border/50">
@@ -296,12 +297,22 @@ export default function ShopSettings() {
             <Field label="Descrição / Personalidade">
               <Textarea value={form.description || ""} onChange={e => set("description", e.target.value)} rows={4} placeholder="Conte a história da sua barbearia..." className="bg-muted border-border/50 rounded-xl resize-none" />
             </Field>
-            <Field label="URL da Logo">
-              <Input value={form.logo || ""} onChange={e => set("logo", e.target.value)} placeholder="https://..." className="bg-muted border-border/50 rounded-xl" />
-            </Field>
-            <Field label="URL do Banner">
-              <Input value={form.banner || ""} onChange={e => set("banner", e.target.value)} placeholder="https://..." className="bg-muted border-border/50 rounded-xl" />
-            </Field>
+            <ImageUpload
+              value={form.logo}
+              onChange={(url) => setForm(prev => ({ ...prev, logo: url }))}
+              onRemove={() => setForm(prev => ({ ...prev, logo: '' }))}
+              label="Logo da Barbearia"
+              aspect="square"
+              maxSizeMB={5}
+            />
+            <ImageUpload
+              value={form.banner}
+              onChange={(url) => setForm(prev => ({ ...prev, banner: url }))}
+              onRemove={() => setForm(prev => ({ ...prev, banner: '' }))}
+              label="Banner da Barbearia"
+              aspect="banner"
+              maxSizeMB={10}
+            />
           </SECTION>
 
           <SECTION icon={Palette} title="Tema e Cores">

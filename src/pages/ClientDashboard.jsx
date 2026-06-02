@@ -99,7 +99,7 @@ export default function ClientDashboard() {
           <h3 className="font-medium text-sm text-primary">Insight IA</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">{aiMessage}</p>
-        <Link to="/" className="mt-3 inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline">
+        <Link to="/explore" className="mt-3 inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline">
           Explorar barbearias <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
@@ -111,7 +111,7 @@ export default function ClientDashboard() {
           <div className="p-6 rounded-2xl bg-card/50 border border-border/30 text-center">
             <Calendar className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground mb-3">Nenhum agendamento futuro</p>
-            <Link to="/">
+            <Link to="/booking">
               <Button size="sm" className="rounded-xl">Agendar agora</Button>
             </Link>
           </div>

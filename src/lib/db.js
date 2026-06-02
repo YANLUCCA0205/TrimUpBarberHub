@@ -11,7 +11,9 @@ const tableMap = {
   Subscription: 'subscriptions',
   BarberLinkRequest: 'barber_link_requests',
   BarberLinkHistory: 'barber_link_history',
-  BarberUnlinkRequest: 'barber_unlink_requests'
+  BarberUnlinkRequest: 'barber_unlink_requests',
+  Notification: 'notifications',
+  NotificationType: 'notification_types'
 };
 
 // Helper function to map and translate filters

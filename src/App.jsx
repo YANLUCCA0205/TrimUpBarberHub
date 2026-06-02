@@ -35,6 +35,13 @@ import SiteOwnerPlanos from './pages/siteowner/Planos';
 import SiteOwnerAssinaturas from './pages/siteowner/Assinaturas';
 import SiteOwnerSimulador from './pages/siteowner/Simulador';
 
+function SmartHome() {
+  const { user } = useAuth();
+  if (user?.roles?.includes('admin')) return <Navigate to="/admin" replace />;
+  if (user?.roles?.includes('barber')) return <Navigate to="/barber-dashboard" replace />;
+  return <Navigate to="/dashboard" replace />;
+}
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
 
@@ -69,7 +76,8 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<Layout />}>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<SmartHome />} />
+          <Route path="/explore" element={<Home />} />
           <Route path="/dashboard" element={<ClientDashboard />} />
           <Route path="/booking" element={<Booking />} />
           <Route path="/marketplace" element={<Marketplace />} />

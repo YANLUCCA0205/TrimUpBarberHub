@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 
+import ImageUpload from '../components/ImageUpload';
 import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export default function Profile() {
   const [shopForm, setShopForm] = useState({ name: "", address: "", phone: "", startTime: "08:00", endTime: "19:00" });
   const [barberLoading, setBarberLoading] = useState(false);
   const [shopLoading, setShopLoading] = useState(false);
+  const [userShops, setUserShops] = useState([]);
 
   useEffect(() => {
     if (!user) return;
@@ -88,6 +90,10 @@ export default function Profile() {
         // Load shops list
         const shopsData = await db.entities.Shop.list();
         setAvailableShops(shopsData);
+
+        // Load user's own shops
+        const ownedShops = await db.entities.Shop.filter({ owner_id: user.id });
+        setUserShops(ownedShops);
       } catch (err) {
         console.error("Error loading profile data:", err);
       } finally {
@@ -99,12 +105,23 @@ export default function Profile() {
 
   async function saveProfile() {
     setSaving(true);
-    const updated = await db.entities.Client.update(client.id, form);
-    setClient(updated);
-    setForm(updated);
-    setEditing(false);
-    toast.success("Perfil atualizado!");
-    setSaving(false);
+    try {
+      const updated = await db.entities.Client.update(client.id, form);
+      setClient(updated);
+      setForm(updated);
+      // Sync to profiles table
+      await supabase.from('profiles').update({
+        full_name: form.name,
+        phone: form.phone
+      }).eq('id', user.id);
+      setEditing(false);
+      toast.success("Perfil atualizado!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao salvar perfil");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleCreateBarber(e) {
@@ -113,6 +130,7 @@ export default function Profile() {
     try {
       const created = await db.entities.Barber.create({
         profile_id: user.id,
+        owner_email: user.email,
         name: barberForm.name || user.full_name || "Barbeiro",
         bio: barberForm.bio || "",
         specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()) : [],
@@ -210,6 +228,7 @@ export default function Profile() {
 
       await db.entities.Shop.create({
         owner_id: user.id,
+        owner_email: user.email,
         name: shopForm.name,
         address: shopForm.address,
         phone: shopForm.phone,
@@ -247,9 +266,33 @@ export default function Profile() {
     <div className="max-w-2xl mx-auto px-4 lg:px-8 py-8">
       {/* Header */}
       <div className="text-center mb-6">
-        <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-          <User className="w-10 h-10 text-primary/50" />
-        </div>
+        {editing ? (
+          <div className="flex justify-center mb-4">
+            <ImageUpload
+              value={client?.avatar_url || user?.avatar_url}
+              onChange={async (url) => {
+                await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id);
+                setForm(prev => ({ ...prev, avatar_url: url }));
+                toast.success('Foto atualizada!');
+              }}
+              onRemove={async () => {
+                await supabase.from('profiles').update({ avatar_url: null }).eq('id', user.id);
+                setForm(prev => ({ ...prev, avatar_url: null }));
+              }}
+              label="Foto de Perfil"
+              aspect="square"
+              maxSizeMB={5}
+            />
+          </div>
+        ) : (
+          <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4 overflow-hidden">
+            {(client?.avatar_url || user?.avatar_url) ? (
+              <img src={client?.avatar_url || user?.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <User className="w-10 h-10 text-primary/50" />
+            )}
+          </div>
+        )}
         <h1 className="text-xl font-bold">{client?.name || user?.full_name || "Meu Perfil"}</h1>
         <p className="text-sm text-muted-foreground">{user?.email}</p>
         {client?.is_vip && <span className="inline-block mt-2 text-xs bg-primary/10 text-primary px-3 py-1 rounded-full">⭐ Cliente VIP</span>}
@@ -453,6 +496,16 @@ export default function Profile() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* CARD 1: TORNAR-SE BARBEIRO */}
+            {userShops.length > 0 ? (
+              <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <h4 className="font-bold text-base mb-1">Quero ser Barbeiro</h4>
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-xs mt-3">
+                    Donos de barbearia não podem se cadastrar como barbeiro em outro local.
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
               <div>
                 <h4 className="font-bold text-base mb-1">Quero ser Barbeiro</h4>
@@ -534,8 +587,19 @@ export default function Profile() {
                 )}
               </div>
             </div>
+            )}
 
             {/* CARD 2: TORNAR-SE ADMIN (CRIAR BARBEARIA) */}
+            {barberProfile && barberProfile.shop_id ? (
+              <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <h4 className="font-bold text-base mb-1">Cadastrar Barbearia</h4>
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-xs mt-3">
+                    Barbeiros vinculados a uma barbearia não podem cadastrar outra.
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
               <div>
                 <h4 className="font-bold text-base mb-1">Cadastrar Barbearia</h4>
@@ -570,6 +634,7 @@ export default function Profile() {
                 </form>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}

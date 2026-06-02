@@ -2,7 +2,7 @@ import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
 
-import { FileText, Store, Search, Plus, Edit2, Check, X } from "lucide-react";
+import { FileText, Store, Search, Plus, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,9 +31,9 @@ export default function SiteOwnerAssinaturas() {
 
   async function load() {
     const [subList, shopList, planList] = await Promise.all([
-      db.entities.Subscription.list("-created_date", 500),
-      db.entities.Shop.list("-created_date", 500),
-      db.entities.Plan.list("-created_date", 20),
+      db.entities.Subscription.list("-created_at", 500),
+      db.entities.Shop.list("-created_at", 500),
+      db.entities.Plan.list("-created_at", 20),
     ]);
     setSubscriptions(subList);
     setShops(shopList);

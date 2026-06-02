@@ -3,7 +3,7 @@ import db from '@/lib/db';
 import { useState } from "react";
 
 import { useAuth } from "@/lib/AuthContext";
-import { Bell, Lock, Smartphone, Globe, Palette, LogOut, ChevronRight, Moon, Sun } from "lucide-react";
+import { Bell, Lock, Smartphone, Globe, Palette, LogOut, ChevronRight, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

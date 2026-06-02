@@ -3,7 +3,7 @@ import db from '@/lib/db';
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 
-import { Star, MapPin, Instagram, Phone, Clock, ArrowLeft, Scissors, ChevronRight, Users } from "lucide-react";
+import { Star, MapPin, Instagram, Phone, Clock, ArrowLeft, Scissors, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function ShopPage() {

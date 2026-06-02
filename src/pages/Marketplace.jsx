@@ -2,7 +2,7 @@ import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
 
-import { ShoppingBag, Search, Filter } from "lucide-react";
+import { ShoppingBag, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ export default function Marketplace() {
 
   useEffect(() => {
     async function load() {
-      const p = await db.entities.Product.list("-created_date");
+      const p = await db.entities.Product.list("-created_at");
       setProducts(p);
       setLoading(false);
     }

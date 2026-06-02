@@ -21,7 +21,7 @@ export default function SiteOwnerPlanos() {
   }, []);
 
   async function load() {
-    const data = await db.entities.Plan.list("-created_date", 20);
+    const data = await db.entities.Plan.list("-created_at", 20);
     setPlans(data);
     setLoading(false);
   }

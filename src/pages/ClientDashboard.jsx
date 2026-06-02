@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/AuthContext";
 import { Link } from "react-router-dom";
 import { Calendar, Clock, Star, Sparkles, ArrowRight, TrendingUp, Scissors, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 const STATUS_MAP = {
   agendado: { label: "Agendado", color: "bg-blue-500/10 text-blue-400" },

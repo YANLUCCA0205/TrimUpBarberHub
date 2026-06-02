@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import ClientHeatmap from "@/components/dashboard/ClientHeatmap";
 
+const TIMES_COUNT = 19; // approximate slots per day
+
 const STATUS_CONFIG = {
   disponivel:     { label: "Disponível",    color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
   em_atendimento: { label: "Em atendimento",color: "text-primary",     bg: "bg-primary/10",     dot: "bg-primary" },
@@ -467,5 +469,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
-const TIMES_COUNT = 19; // approximate slots per day

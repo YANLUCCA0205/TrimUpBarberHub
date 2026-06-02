@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Scissors, Calendar, Star, TrendingUp, Users, Sparkles, ArrowRight, ChevronRight, Shield, Zap } from "lucide-react";
+import { Scissors, Calendar, TrendingUp, Users, Sparkles, ArrowRight, ChevronRight, Shield, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 

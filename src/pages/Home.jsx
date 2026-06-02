@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh.jsx";
 
 import { useAuth } from "@/lib/AuthContext";
-import { Link } from "react-router-dom";
-import { Search, MapPin, TrendingUp, Sparkles, Star, ArrowRight, Scissors, Zap } from "lucide-react";
+import { Search, TrendingUp, Sparkles, Scissors, Zap } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import ShopCard from "@/components/ShopCard";
 

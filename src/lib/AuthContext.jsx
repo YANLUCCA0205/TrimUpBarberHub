@@ -50,16 +50,16 @@ export const AuthProvider = ({ children }) => {
       
       if (prof) {
         setProfile(prof);
-        setRoles(prof.profile_roles?.map(r => r.role) || ['CLIENT']);
+        setRoles(prof.profile_roles?.map(r => r.role) || ['user']);
       } else {
         // Fallback for profiles not yet created or error
         setProfile({ id: userId, full_name: 'Usuário', email: session?.user?.email });
-        setRoles(['CLIENT']);
+        setRoles(['user']);
       }
     } catch (err) {
       console.error('Error loading user profile:', err);
       setProfile({ id: userId, full_name: 'Usuário', email: session?.user?.email });
-      setRoles(['CLIENT']);
+      setRoles(['user']);
     } finally {
       setLoading(false);
       setAuthChecked(true);
@@ -88,7 +88,7 @@ export const AuthProvider = ({ children }) => {
     ? {
         ...session.user,
         ...profile,
-        role: roles[0] || 'CLIENT',
+        role: roles[0] || 'user',
         roles // export full roles array too
       }
     : null;

@@ -3,7 +3,7 @@ import db from '@/lib/db';
 import { useState, useEffect } from "react";
 
 import { useAuth } from "@/lib/AuthContext";
-import { Calendar, Clock, ChevronLeft, ChevronRight, Check, Star, MapPin, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, Star, MapPin, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";

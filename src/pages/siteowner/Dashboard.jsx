@@ -16,11 +16,11 @@ export default function SiteOwnerDashboard() {
   useEffect(() => {
     async function load() {
       const [shopList, barberList, clientList, subList, planList] = await Promise.all([
-        db.entities.Shop.list("-created_date", 500),
-        db.entities.Barber.list("-created_date", 500),
-        db.entities.Client.list("-created_date", 1000),
-        db.entities.Subscription.list("-created_date", 500),
-        db.entities.Plan.list("-created_date", 20),
+        db.entities.Shop.list("-created_at", 500),
+        db.entities.Barber.list("-created_at", 500),
+        db.entities.Client.list("-created_at", 1000),
+        db.entities.Subscription.list("-created_at", 500),
+        db.entities.Plan.list("-created_at", 20),
       ]);
       setShops(shopList);
       setBarbers(barberList);

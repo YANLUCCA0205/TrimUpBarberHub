@@ -1,0 +1,79 @@
+{
+  "name": "Plan",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Nome do Plano"
+    },
+    "monthly_price": {
+      "type": "number",
+      "title": "Valor Mensal (R$)"
+    },
+    "annual_price": {
+      "type": "number",
+      "title": "Valor Anual (R$)"
+    },
+    "annual_discount": {
+      "type": "number",
+      "title": "Desconto Anual (%)",
+      "default": 0
+    },
+    "trial_days": {
+      "type": "number",
+      "title": "Dias de Teste Gr\u00e1tis",
+      "default": 14
+    },
+    "max_barbers": {
+      "type": "number",
+      "title": "Limite de Barbeiros"
+    },
+    "max_clients": {
+      "type": "number",
+      "title": "Limite de Clientes"
+    },
+    "max_units": {
+      "type": "number",
+      "title": "Limite de Unidades",
+      "default": 1
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Recursos Inclu\u00eddos"
+    },
+    "is_active": {
+      "type": "boolean",
+      "title": "Ativo",
+      "default": true
+    },
+    "description": {
+      "type": "string",
+      "title": "Descri\u00e7\u00e3o"
+    }
+  },
+  "required": [
+    "name",
+    "monthly_price"
+  ],
+  "rls": {
+    "create": {
+      "user_condition": {
+        "role": "siteowner"
+      }
+    },
+    "read": {},
+    "update": {
+      "user_condition": {
+        "role": "siteowner"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "siteowner"
+      }
+    }
+  }
+}

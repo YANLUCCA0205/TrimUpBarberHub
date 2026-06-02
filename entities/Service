@@ -1,0 +1,92 @@
+{
+  "name": "Service",
+  "type": "object",
+  "properties": {
+    "barber_id": {
+      "type": "string",
+      "title": "ID do Barbeiro"
+    },
+    "name": {
+      "type": "string",
+      "title": "Nome do Servi\u00e7o"
+    },
+    "description": {
+      "type": "string",
+      "title": "Descri\u00e7\u00e3o"
+    },
+    "price": {
+      "type": "number",
+      "title": "Pre\u00e7o"
+    },
+    "duration_minutes": {
+      "type": "number",
+      "title": "Dura\u00e7\u00e3o (min)",
+      "default": 30
+    },
+    "category": {
+      "type": "string",
+      "title": "Categoria",
+      "enum": [
+        "corte",
+        "barba",
+        "combo",
+        "tratamento",
+        "colora\u00e7\u00e3o",
+        "outros"
+      ]
+    },
+    "image": {
+      "type": "string",
+      "title": "Imagem"
+    },
+    "is_active": {
+      "type": "boolean",
+      "title": "Ativo",
+      "default": true
+    }
+  },
+  "required": [
+    "barber_id",
+    "name",
+    "price"
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "read": {},
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

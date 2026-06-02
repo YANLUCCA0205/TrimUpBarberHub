@@ -1,0 +1,168 @@
+{
+  "name": "Appointment",
+  "type": "object",
+  "properties": {
+    "barber_id": {
+      "type": "string",
+      "title": "ID do Barbeiro"
+    },
+    "barber_name": {
+      "type": "string",
+      "title": "Nome do Barbeiro"
+    },
+    "client_email": {
+      "type": "string",
+      "title": "Email do Cliente"
+    },
+    "client_name": {
+      "type": "string",
+      "title": "Nome do Cliente"
+    },
+    "service_id": {
+      "type": "string",
+      "title": "ID do Servi\u00e7o"
+    },
+    "service_name": {
+      "type": "string",
+      "title": "Nome do Servi\u00e7o"
+    },
+    "date": {
+      "type": "string",
+      "title": "Data"
+    },
+    "time": {
+      "type": "string",
+      "title": "Hor\u00e1rio"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "agendado",
+        "confirmado",
+        "em_andamento",
+        "concluido",
+        "cancelado",
+        "no_show"
+      ],
+      "default": "agendado"
+    },
+    "price": {
+      "type": "number",
+      "title": "Pre\u00e7o"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Observa\u00e7\u00f5es"
+    },
+    "rating": {
+      "type": "number",
+      "title": "Avalia\u00e7\u00e3o"
+    },
+    "review": {
+      "type": "string",
+      "title": "Coment\u00e1rio"
+    }
+  },
+  "required": [
+    "barber_id",
+    "client_email",
+    "service_name",
+    "date",
+    "time"
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.client_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "siteowner"
+          }
+        },
+        {
+          "data.barber_id": "{{user.ownedBarberId}}"
+        }
+      ]
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.client_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "siteowner"
+          }
+        },
+        {
+          "data.barber_id": "{{user.ownedBarberId}}"
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.client_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "siteowner"
+          }
+        },
+        {
+          "data.barber_id": "{{user.ownedBarberId}}"
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "data.client_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "siteowner"
+          }
+        },
+        {
+          "data.barber_id": "{{user.ownedBarberId}}"
+        }
+      ]
+    }
+  }
+}

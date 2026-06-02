@@ -1,0 +1,185 @@
+{
+  "name": "Shop",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Nome da Barbearia"
+    },
+    "slug": {
+      "type": "string",
+      "title": "Slug (URL \u00fanica)"
+    },
+    "logo": {
+      "type": "string",
+      "title": "Logo"
+    },
+    "banner": {
+      "type": "string",
+      "title": "Banner"
+    },
+    "primary_color": {
+      "type": "string",
+      "title": "Cor Prim\u00e1ria",
+      "default": "#D4A017"
+    },
+    "secondary_color": {
+      "type": "string",
+      "title": "Cor Secund\u00e1ria",
+      "default": "#1a1a2e"
+    },
+    "font": {
+      "type": "string",
+      "title": "Fonte",
+      "default": "Inter"
+    },
+    "slogan": {
+      "type": "string",
+      "title": "Slogan"
+    },
+    "description": {
+      "type": "string",
+      "title": "Descri\u00e7\u00e3o"
+    },
+    "city": {
+      "type": "string",
+      "title": "Cidade"
+    },
+    "neighborhood": {
+      "type": "string",
+      "title": "Bairro"
+    },
+    "address": {
+      "type": "string",
+      "title": "Endere\u00e7o"
+    },
+    "latitude": {
+      "type": "number",
+      "title": "Latitude"
+    },
+    "longitude": {
+      "type": "number",
+      "title": "Longitude"
+    },
+    "owner_email": {
+      "type": "string",
+      "title": "Email do Dono"
+    },
+    "instagram": {
+      "type": "string",
+      "title": "Instagram"
+    },
+    "whatsapp": {
+      "type": "string",
+      "title": "WhatsApp"
+    },
+    "rating": {
+      "type": "number",
+      "title": "Avalia\u00e7\u00e3o",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "total_reviews": {
+      "type": "number",
+      "title": "Total de Avalia\u00e7\u00f5es",
+      "default": 0
+    },
+    "total_clients": {
+      "type": "number",
+      "title": "Total de Clientes",
+      "default": 0
+    },
+    "monthly_revenue": {
+      "type": "number",
+      "title": "Faturamento Mensal",
+      "default": 0
+    },
+    "retention_rate": {
+      "type": "number",
+      "title": "Taxa de Reten\u00e7\u00e3o",
+      "default": 0
+    },
+    "plan": {
+      "type": "string",
+      "title": "Plano",
+      "enum": [
+        "free",
+        "pro",
+        "premium"
+      ],
+      "default": "free"
+    },
+    "is_active": {
+      "type": "boolean",
+      "title": "Ativo",
+      "default": true
+    },
+    "is_featured": {
+      "type": "boolean",
+      "title": "Em Destaque",
+      "default": false
+    },
+    "specialties": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Especialidades"
+    },
+    "portfolio": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Portf\u00f3lio"
+    },
+    "working_hours": {
+      "type": "object",
+      "title": "Hor\u00e1rio de Funcionamento"
+    }
+  },
+  "required": [
+    "name",
+    "slug",
+    "owner_email"
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "data.owner_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "read": {},
+    "update": {
+      "$or": [
+        {
+          "data.owner_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.owner_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

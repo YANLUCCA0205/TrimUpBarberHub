@@ -64,7 +64,7 @@ export default function ShopSettings() {
         
         const [b, s, reqs] = await Promise.all([
           db.entities.Barber.filter({ shop_id: currentShop.id }),
-          db.entities.Service.filter({ barber_id: { $exists: true } }),
+          db.entities.Service.filter({ shop_id: currentShop.id }),
           db.entities.BarberLinkRequest.filter({ shop_id: currentShop.id, status: "pending" })
         ]);
         

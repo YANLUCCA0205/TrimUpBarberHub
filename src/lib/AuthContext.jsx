@@ -84,11 +84,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const getPrimaryRole = (rolesList) => {
+    if (!rolesList || rolesList.length === 0) return 'user';
+    if (rolesList.includes('siteowner')) return 'siteowner';
+    if (rolesList.includes('admin')) return 'admin';
+    if (rolesList.includes('barber')) return 'barber';
+    return 'user';
+  };
+
   const user = session?.user
     ? {
         ...session.user,
         ...profile,
-        role: roles[0] || 'user',
+        role: getPrimaryRole(roles),
         roles // export full roles array too
       }
     : null;

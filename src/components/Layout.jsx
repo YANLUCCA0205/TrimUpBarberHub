@@ -34,6 +34,9 @@ export default function Layout() {
 
   // Dynamically show panels if user has appropriate roles and simulation is not active
   if (!simulation?.active) {
+    if (user?.roles?.includes("barber") && !navItems.find(x => x.to === "/barber-dashboard")) {
+      navItems.push({ to: "/barber-dashboard", icon: LayoutDashboard, label: "Minha Agenda" });
+    }
     if (user?.roles?.includes("admin") && !navItems.find(x => x.to === "/admin")) {
       navItems.push({ to: "/admin", icon: BarChart3, label: "Painel Admin" });
     }

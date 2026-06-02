@@ -233,10 +233,18 @@ export const db = {
 
       const roles = profile?.profile_roles?.map(r => r.role) || [];
 
+      const getPrimaryRole = (rolesList) => {
+        if (!rolesList || rolesList.length === 0) return 'user';
+        if (rolesList.includes('siteowner')) return 'siteowner';
+        if (rolesList.includes('admin')) return 'admin';
+        if (rolesList.includes('barber')) return 'barber';
+        return 'user';
+      };
+
       return {
         ...user,
         ...profile,
-        role: roles[0] || 'user',
+        role: getPrimaryRole(roles),
         roles
       };
     },

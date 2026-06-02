@@ -38,10 +38,11 @@ export default function SiteOwnerPlanos() {
 
   async function save() {
     setSaving(true);
+    const monthlyVal = Number(form.monthly_price) || 0;
     const payload = {
       ...form,
-      monthly_price: Number(form.monthly_price),
-      annual_price: Number(form.annual_price) || undefined,
+      monthly_price: monthlyVal,
+      annual_price: Number(form.annual_price) || (monthlyVal * 12) || 0,
       annual_discount: Number(form.annual_discount) || 0,
       trial_days: Number(form.trial_days) || 14,
       max_barbers: Number(form.max_barbers) || undefined,

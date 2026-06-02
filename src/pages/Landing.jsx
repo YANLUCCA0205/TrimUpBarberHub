@@ -1,7 +1,9 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Scissors, Calendar, TrendingUp, Users, Sparkles, ArrowRight, ChevronRight, Shield, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import db from "@/lib/db";
 
 const features = [
 { icon: Calendar, title: "Agendamento Inteligente", desc: "IA sugere horários, barbeiros e cortes ideais baseados no seu perfil." },
@@ -19,7 +21,30 @@ const stats = [
 
 const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } };
 
+const fallbackPlans = [
+  { name: "Free", monthly_price: 0, features: ["Até 50 agendamentos/mês", "1 barbeiro", "Perfil básico", "Agendamento online"] },
+  { name: "Pro", monthly_price: 89, popular: true, features: ["Agendamentos ilimitados", "Até 5 barbeiros", "BI & Analytics", "Marketplace", "CRM completo", "IA de recomendações"] },
+  { name: "Premium", monthly_price: 199, features: ["Tudo do Pro", "Barbeiros ilimitados", "IA estratégica avançada", "Heatmap de clientes", "API & integrações", "Suporte prioritário"] }
+];
+
 export default function Landing() {
+  const [plans, setPlans] = useState([]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const p = await db.entities.Plan.list();
+        const active = p.filter(x => x.is_active !== false);
+        setPlans(active);
+      } catch (err) {
+        console.error("Erro ao carregar planos na Landing page:", err);
+      }
+    }
+    load();
+  }, []);
+
+  const displayPlans = plans.length > 0 ? plans : fallbackPlans;
+
   return (
     <div className="min-h-screen bg-background overflow-hidden">
       {/* Navbar */}
@@ -135,46 +160,45 @@ export default function Landing() {
             <p className="text-muted-foreground">Comece grátis e evolua conforme seu negócio cresce.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {[
-            { name: "Free", price: "0", features: ["Até 50 agendamentos/mês", "1 barbeiro", "Perfil básico", "Agendamento online"] },
-            { name: "Pro", price: "89", popular: true, features: ["Agendamentos ilimitados", "Até 5 barbeiros", "BI & Analytics", "Marketplace", "CRM completo", "IA de recomendações"] },
-            { name: "Premium", price: "199", features: ["Tudo do Pro", "Barbeiros ilimitados", "IA estratégica avançada", "Heatmap de clientes", "API & integrações", "Suporte prioritário"] }].
-            map((plan, i) =>
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className={`relative p-8 rounded-2xl border transition-all ${
-              plan.popular ? "bg-card border-primary/50 shadow-lg shadow-primary/5" : "bg-card/50 border-border/50"}`
-              }>
-              
-                {plan.popular &&
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-primary text-primary-foreground text-xs font-medium">
-                    Mais popular
+            {displayPlans.map((plan, i) => {
+              const isPopular = plan.popular || plan.name?.toLowerCase() === "pro";
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1 }}
+                  className={`relative p-8 rounded-2xl border transition-all ${
+                    isPopular ? "bg-card border-primary/50 shadow-lg shadow-primary/5" : "bg-card/50 border-border/50"
+                  }`}
+                >
+                  {isPopular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-primary text-primary-foreground text-xs font-medium">
+                      Mais popular
+                    </div>
+                  )}
+                  <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
+                  <div className="flex items-baseline gap-1 mb-6">
+                    <span className="text-4xl font-bold">R${plan.monthly_price}</span>
+                    <span className="text-muted-foreground text-sm">/mês</span>
                   </div>
-              }
-                <h3 className="text-xl font-bold mb-2">{plan.name}</h3>
-                <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-4xl font-bold">R${plan.price}</span>
-                  <span className="text-muted-foreground text-sm">/mês</span>
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {plan.features.map((f, j) =>
-                <li key={j} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <ChevronRight className="w-3.5 h-3.5 text-primary" />
-                      {f}
-                    </li>
-                )}
-                </ul>
-                <Link to="/register">
-                  <Button className={`w-full rounded-xl ${plan.popular ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}>
-                    Começar agora
-                  </Button>
-                </Link>
-              </motion.div>
-            )}
+                  <ul className="space-y-3 mb-8">
+                    {(plan.features || []).map((f, j) => (
+                      <li key={j} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <ChevronRight className="w-3.5 h-3.5 text-primary" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/register">
+                    <Button className={`w-full rounded-xl ${isPopular ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}>
+                      Começar agora
+                    </Button>
+                  </Link>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>

@@ -1,4 +1,5 @@
 import db from '@/lib/db';
+import { supabase } from "@/lib/supabase";
 
 import { useAuth } from "@/lib/AuthContext";
 import { useState, useEffect } from "react";
@@ -146,6 +147,43 @@ export default function Profile() {
     } catch (err) {
       console.error(err);
       toast.error("Erro ao enviar solicitação.");
+    } finally {
+      setBarberLoading(false);
+    }
+  }
+
+  async function handleUnlinkBarber() {
+    if (!barberProfile || !barberProfile.shop_id) return;
+    setBarberLoading(true);
+    try {
+      const oldShopId = barberProfile.shop_id;
+      // 1. Update barber's shop_id to null
+      await db.entities.Barber.update(barberProfile.id, { shop_id: null });
+      // 2. Remove from shop_memberships
+      await supabase
+        .from('shop_memberships')
+        .delete()
+        .eq('shop_id', oldShopId)
+        .eq('profile_id', user.id)
+        .eq('role', 'barber');
+      
+      // 3. Create BarberLinkHistory record
+      await db.entities.BarberLinkHistory.create({
+        shop_id: oldShopId,
+        profile_id: user.id,
+        barber_id: barberProfile.id,
+        action: 'unlinked',
+        notes: 'Desvinculado pelo próprio profissional.'
+      });
+
+      // 4. Update local state
+      setBarberProfile(prev => ({ ...prev, shop_id: null }));
+      setLinkRequest(null);
+      
+      toast.success("Desvinculado da barbearia com sucesso!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao se desvincular da barbearia.");
     } finally {
       setBarberLoading(false);
     }
@@ -459,9 +497,20 @@ export default function Profile() {
                         )}
                       </div>
                     ) : (
-                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs">
-                        Vinculado com sucesso à barbearia <strong>{availableShops.find(s => s.id === barberProfile.shop_id)?.name}</strong>!
-                      </div>
+                       <div className="space-y-3">
+                         <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs">
+                           Vinculado com sucesso à barbearia <strong>{availableShops.find(s => s.id === barberProfile.shop_id)?.name}</strong>!
+                         </div>
+                         <Button 
+                           type="button"
+                           onClick={handleUnlinkBarber} 
+                           disabled={barberLoading} 
+                           variant="destructive" 
+                           className="w-full text-xs h-9 bg-red-600 hover:bg-red-500 text-white rounded-lg"
+                         >
+                           {barberLoading ? "Desvinculando..." : "Desvincular da Barbearia"}
+                         </Button>
+                       </div>
                     )}
                   </div>
                 ) : (

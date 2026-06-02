@@ -27,9 +27,35 @@ export default function Booking() {
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [takenSlots, setTakenSlots] = useState([]);
+  const [isBarberBooking, setIsBarberBooking] = useState(false);
 
   useEffect(() => {
     async function load() {
+      // Check if user is a barber and associated with a shop
+      const isUserBarber = user?.roles?.includes("barber") || user?.role === "barber";
+      let activeBarberProfile = null;
+      
+      if (isUserBarber) {
+        const bData = await db.entities.Barber.filter({ profile_id: user.id });
+        if (bData.length > 0 && bData[0].shop_id) {
+          activeBarberProfile = bData[0];
+        }
+      }
+
+      if (activeBarberProfile) {
+        const shop = await db.entities.Shop.get(activeBarberProfile.shop_id);
+        if (shop) {
+          setSelectedShop(shop);
+          setSelectedBarber(activeBarberProfile);
+          const svcs = await db.entities.Service.filter({ barber_id: activeBarberProfile.id });
+          setServices(svcs.filter(x => x.is_active !== false));
+          setIsBarberBooking(true);
+          setStep(2);
+          setLoading(false);
+          return;
+        }
+      }
+
       const s = await db.entities.Shop.list("-rating");
       setShops(s.filter(x => x.is_active !== false));
 
@@ -62,7 +88,7 @@ export default function Booking() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [user]);
 
   async function selectShop(shop) {
     setSelectedShop(shop);
@@ -136,8 +162,10 @@ export default function Booking() {
     await db.entities.Appointment.create({
       barber_id: selectedBarber.id,
       barber_name: selectedBarber.name,
+      client_id: user.id,
       client_email: user.email,
       client_name: user.full_name,
+      shop_id: selectedShop.id,
       service_id: selectedService.id,
       service_name: selectedService.name,
       date: selectedDate,
@@ -315,9 +343,11 @@ export default function Booking() {
       {/* Step 2: Serviço */}
       {step === 2 && (
         <div>
-          <button onClick={() => setStep(1)} className="flex items-center gap-1 text-sm text-muted-foreground mb-4 hover:text-foreground">
-            <ChevronLeft className="w-4 h-4" /> Voltar
-          </button>
+          {!isBarberBooking && (
+            <button onClick={() => setStep(1)} className="flex items-center gap-1 text-sm text-muted-foreground mb-4 hover:text-foreground">
+              <ChevronLeft className="w-4 h-4" /> Voltar
+            </button>
+          )}
           <h2 className="text-xl font-bold mb-2">Escolha o serviço</h2>
           <p className="text-sm text-muted-foreground mb-6">{noPreference ? "Todos os serviços disponíveis" : selectedBarber?.name}</p>
           <div className="space-y-3">

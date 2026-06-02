@@ -522,7 +522,12 @@ CREATE POLICY "Apenas SITEOWNER edita planos" ON public.plans FOR ALL USING (pub
 -- Shops
 CREATE POLICY "Qualquer um vê lojas" ON public.shops FOR SELECT USING (true);
 CREATE POLICY "Qualquer usuário logado cria loja" ON public.shops FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-CREATE POLICY "Proprietário edita loja" ON public.shops FOR UPDATE USING (owner_id = public.my_profile_id() OR public.has_role('siteowner'));
+CREATE POLICY "Proprietário edita loja" ON public.shops FOR UPDATE USING (
+  owner_id = public.my_profile_id() 
+  OR public.is_shop_member(id, 'owner') 
+  OR public.is_shop_member(id, 'admin') 
+  OR public.has_role('siteowner')
+);
 
 -- Shop Memberships
 CREATE POLICY "Membros veem membros" ON public.shop_memberships FOR SELECT USING (true);

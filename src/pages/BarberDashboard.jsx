@@ -1,4 +1,5 @@
 import db from '@/lib/db';
+import { supabase } from "@/lib/supabase";
 
 import { useState, useEffect } from "react";
 
@@ -28,19 +29,26 @@ export default function BarberDashboard() {
   const [loading, setLoading] = useState(true);
   const [showServiceDialog, setShowServiceDialog] = useState(false);
   const [newService, setNewService] = useState({ name: "", price: "", duration_minutes: "30", category: "corte", description: "" });
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     async function load() {
       if (!user) return;
       const barbers = await db.entities.Barber.filter({ owner_email: user.email });
       if (barbers.length > 0) {
-        setBarber(barbers[0]);
-        const [a, s] = await Promise.all([
-          db.entities.Appointment.filter({ barber_id: barbers[0].id }, "-date", 20),
-          db.entities.Service.filter({ barber_id: barbers[0].id }),
+        const currentBarber = barbers[0];
+        setBarber(currentBarber);
+        const [a, s, membershipRes] = await Promise.all([
+          db.entities.Appointment.filter({ barber_id: currentBarber.id }, "-date", 20),
+          db.entities.Service.filter({ barber_id: currentBarber.id }),
+          currentBarber.shop_id 
+            ? supabase.from('shop_memberships').select('role').eq('shop_id', currentBarber.shop_id).eq('profile_id', user.id).maybeSingle()
+            : Promise.resolve({ data: null })
         ]);
         setAppointments(a);
         setServices(s);
+        const isShopAdmin = membershipRes?.data?.role === 'owner' || membershipRes?.data?.role === 'admin' || user?.roles?.includes('siteowner');
+        setIsAdmin(isShopAdmin);
       }
       setLoading(false);
     }
@@ -105,11 +113,13 @@ export default function BarberDashboard() {
           <h1 className="text-2xl font-bold">Painel</h1>
           <p className="text-sm text-muted-foreground">{barber.name}</p>
         </div>
-        <Link to="/shop-settings">
-          <Button variant="outline" size="sm" className="rounded-xl border-border/50 gap-2">
-            <Settings className="w-4 h-4" /> Configurar Barbearia
-          </Button>
-        </Link>
+        {isAdmin && (
+          <Link to="/shop-settings">
+            <Button variant="outline" size="sm" className="rounded-xl border-border/50 gap-2">
+              <Settings className="w-4 h-4" /> Configurar Barbearia
+            </Button>
+          </Link>
+        )}
       </div>
 
       <StatsGrid stats={stats} />

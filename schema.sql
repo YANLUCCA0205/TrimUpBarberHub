@@ -522,30 +522,30 @@ CREATE POLICY "Apenas SITEOWNER edita planos" ON public.plans FOR ALL USING (pub
 -- Shops
 CREATE POLICY "Qualquer um vê lojas" ON public.shops FOR SELECT USING (true);
 CREATE POLICY "Qualquer usuário logado cria loja" ON public.shops FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-CREATE POLICY "Proprietário edita loja" ON public.shops FOR UPDATE USING (owner_id = public.my_profile_id() OR public.has_role('SITEOWNER'));
+CREATE POLICY "Proprietário edita loja" ON public.shops FOR UPDATE USING (owner_id = public.my_profile_id() OR public.has_role('siteowner'));
 
 -- Shop Memberships
 CREATE POLICY "Membros veem membros" ON public.shop_memberships FOR SELECT USING (true);
-CREATE POLICY "Apenas proprietário edita membros" ON public.shop_memberships FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.has_role('SITEOWNER'));
+CREATE POLICY "Apenas proprietário edita membros" ON public.shop_memberships FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.has_role('siteowner'));
 
 -- Subscriptions
-CREATE POLICY "Proprietários da loja veem assinatura" ON public.subscriptions FOR SELECT USING (public.is_shop_member(shop_id, 'owner') OR public.has_role('SITEOWNER'));
+CREATE POLICY "Proprietários da loja veem assinatura" ON public.subscriptions FOR SELECT USING (public.is_shop_member(shop_id, 'owner') OR public.has_role('siteowner'));
 
 -- Barbers
 CREATE POLICY "Qualquer um vê barbeiros" ON public.barbers FOR SELECT USING (true);
-CREATE POLICY "Dono ou Admin edita barbeiros" ON public.barbers FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('SITEOWNER'));
+CREATE POLICY "Dono ou Admin edita barbeiros" ON public.barbers FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('siteowner'));
 
 -- Services
 CREATE POLICY "Qualquer um vê serviços" ON public.services FOR SELECT USING (true);
-CREATE POLICY "Gestão de serviços" ON public.services FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('SITEOWNER'));
+CREATE POLICY "Gestão de serviços" ON public.services FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('siteowner'));
 
 -- Products
 CREATE POLICY "Qualquer um vê produtos" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Gestão de produtos" ON public.products FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('SITEOWNER'));
+CREATE POLICY "Gestão de produtos" ON public.products FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('siteowner'));
 
 -- Client Records
-CREATE POLICY "Membros da loja veem clientes" ON public.client_records FOR SELECT USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.is_shop_member(shop_id, 'barber') OR public.has_role('SITEOWNER'));
-CREATE POLICY "Gestão de fichas de clientes" ON public.client_records FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('SITEOWNER'));
+CREATE POLICY "Membros da loja veem clientes" ON public.client_records FOR SELECT USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.is_shop_member(shop_id, 'barber') OR public.has_role('siteowner'));
+CREATE POLICY "Gestão de fichas de clientes" ON public.client_records FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('siteowner'));
 
 -- Appointments
 CREATE POLICY "Usuário vê próprios agendamentos" ON public.appointments FOR SELECT USING (client_id = public.my_profile_id());

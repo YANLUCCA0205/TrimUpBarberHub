@@ -1,4 +1,4 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
 
@@ -45,23 +45,21 @@ export default function SiteOwnerAssinaturas() {
   const planMap = Object.fromEntries(plans.map(p => [p.id, p]));
 
   // Shops without a subscription
-  const subscribedShopIds = new Set(subscriptions.map(s => s.barbershop_id));
+  const subscribedShopIds = new Set(subscriptions.map(s => s.shop_id));
   const unsubscribed = shops.filter(s => !subscribedShopIds.has(s.id));
 
   const filtered = subscriptions.filter(s => {
-    const shopName = s.barbershop_name || shopMap[s.barbershop_id]?.name || "";
-    const matchSearch = !search || shopName.toLowerCase().includes(search.toLowerCase()) || s.plan_name?.toLowerCase().includes(search.toLowerCase());
+    const shopName = shopMap[s.shop_id]?.name || "";
+    const planName = planMap[s.plan_id]?.name || "";
+    const matchSearch = !search || shopName.toLowerCase().includes(search.toLowerCase()) || planName.toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === "all" || s.status === filter;
     return matchSearch && matchFilter;
   });
 
   function startNew(shopId) {
-    const shop = shopMap[shopId];
     setForm({
-      barbershop_id: shopId,
-      barbershop_name: shop?.name || "",
+      shop_id: shopId,
       plan_id: plans[0]?.id || "",
-      plan_name: plans[0]?.name || "",
       status: "active",
       monthly_value: plans[0]?.monthly_price || 0,
       start_date: new Date().toISOString().slice(0, 10),
@@ -78,15 +76,25 @@ export default function SiteOwnerAssinaturas() {
 
   function onPlanChange(planId) {
     const plan = planMap[planId];
-    setForm(f => ({ ...f, plan_id: planId, plan_name: plan?.name || "", monthly_value: plan?.monthly_price || 0 }));
+    setForm(f => ({ ...f, plan_id: planId, monthly_value: plan?.monthly_price || 0 }));
   }
 
   async function save() {
     setSaving(true);
+    // Send only valid columns in the payload for subscriptions table
+    const payload = {
+      shop_id: form.shop_id,
+      plan_id: form.plan_id,
+      status: form.status,
+      monthly_value: Number(form.monthly_value),
+      start_date: form.start_date,
+      renewal_date: form.renewal_date || null,
+      auto_renew: form.auto_renew !== false,
+    };
     if (editing === "new") {
-      await db.entities.Subscription.create(form);
+      await db.entities.Subscription.create(payload);
     } else {
-      await db.entities.Subscription.update(editing.id, form);
+      await db.entities.Subscription.update(editing.id, payload);
     }
     await load();
     setEditing(null);
@@ -132,11 +140,11 @@ export default function SiteOwnerAssinaturas() {
       {/* Form */}
       {editing && (
         <div className="mb-6 p-6 rounded-2xl bg-card border border-primary/20">
-          <h3 className="font-semibold mb-4">{editing === "new" ? "Nova Assinatura" : `Editar: ${form.barbershop_name}`}</h3>
+          <h3 className="font-semibold mb-4">{editing === "new" ? "Nova Assinatura" : `Editar: ${shopMap[form.shop_id]?.name}`}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label className="text-xs mb-1.5">Barbearia</Label>
-              <Input value={form.barbershop_name || ""} disabled className="bg-background opacity-60" />
+              <Input value={shopMap[form.shop_id]?.name || ""} disabled className="bg-background opacity-60" />
             </div>
             <div>
               <Label className="text-xs mb-1.5">Plano</Label>
@@ -201,26 +209,30 @@ export default function SiteOwnerAssinaturas() {
           <span>Renovação</span>
           <span>Status</span>
         </div>
-        {filtered.map(sub => (
-          <div key={sub.id} onClick={() => startEdit(sub)}
-            className="grid grid-cols-5 gap-4 px-5 py-3.5 border-b border-border/10 last:border-0 hover:bg-muted/10 transition-all cursor-pointer">
-            <div className="col-span-2">
-              <p className="text-sm font-medium truncate">{sub.barbershop_name || shopMap[sub.barbershop_id]?.name || sub.barbershop_id}</p>
-              <p className="text-xs text-muted-foreground">R${sub.monthly_value || 0}/mês</p>
+        {filtered.map(sub => {
+          const shopName = shopMap[sub.shop_id]?.name || "Barbearia";
+          const planName = planMap[sub.plan_id]?.name || "Plano";
+          return (
+            <div key={sub.id} onClick={() => startEdit(sub)}
+              className="grid grid-cols-5 gap-4 px-5 py-3.5 border-b border-border/10 last:border-0 hover:bg-muted/10 transition-all cursor-pointer">
+              <div className="col-span-2">
+                <p className="text-sm font-medium truncate">{shopName}</p>
+                <p className="text-xs text-muted-foreground">R${sub.monthly_value || 0}/mês</p>
+              </div>
+              <div className="flex items-center">
+                <span className="text-xs font-medium">{planName}</span>
+              </div>
+              <div className="flex items-center">
+                <span className="text-xs text-muted-foreground">{sub.renewal_date || "—"}</span>
+              </div>
+              <div className="flex items-center">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[sub.status] || STATUS_COLORS.expired}`}>
+                  {sub.status}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center">
-              <span className="text-xs font-medium">{sub.plan_name}</span>
-            </div>
-            <div className="flex items-center">
-              <span className="text-xs text-muted-foreground">{sub.renewal_date || "—"}</span>
-            </div>
-            <div className="flex items-center">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[sub.status] || STATUS_COLORS.expired}`}>
-                {sub.status}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {filtered.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <Store className="w-8 h-8 mx-auto mb-2 opacity-20" />

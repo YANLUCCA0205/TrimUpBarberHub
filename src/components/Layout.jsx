@@ -1,4 +1,4 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -29,7 +29,18 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const simulation = getSimulation();
   const effectiveRole = simulation?.active ? simulation.role : user?.role;
-  const navItems = effectiveRole === "barber" ? barberNav : clientNav;
+  
+  const navItems = [...(effectiveRole === "barber" ? barberNav : clientNav)];
+
+  // Dynamically show panels if user has appropriate roles and simulation is not active
+  if (!simulation?.active) {
+    if (user?.roles?.includes("admin") && !navItems.find(x => x.to === "/admin")) {
+      navItems.push({ to: "/admin", icon: BarChart3, label: "Painel Admin" });
+    }
+    if (user?.roles?.includes("siteowner") && !navItems.find(x => x.to === "/siteowner")) {
+      navItems.push({ to: "/siteowner", icon: BarChart3, label: "Painel SiteOwner" });
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background flex">

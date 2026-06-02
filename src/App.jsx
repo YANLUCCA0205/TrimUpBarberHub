@@ -80,13 +80,15 @@ const AuthenticatedApp = () => {
         </Route>
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-        <Route element={<AdminLayout />}>
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/agenda" element={<AdminAgenda />} />
-          <Route path="/admin/clientes" element={<AdminClientes />} />
-          <Route path="/admin/barbearia" element={<ShopSettings />} />
-          <Route path="/admin/produtos" element={<AdminProdutos />} />
-          <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />
+        <Route element={<RoleRoute allowedRoles={["admin", "siteowner"]} redirectTo="/" />}>
+          <Route element={<AdminLayout />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/agenda" element={<AdminAgenda />} />
+            <Route path="/admin/clientes" element={<AdminClientes />} />
+            <Route path="/admin/barbearia" element={<ShopSettings />} />
+            <Route path="/admin/produtos" element={<AdminProdutos />} />
+            <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />
+          </Route>
         </Route>
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>

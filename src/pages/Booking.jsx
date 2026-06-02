@@ -1,4 +1,4 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
 
@@ -125,6 +125,13 @@ export default function Booking() {
       setStep(3);
       return;
     }
+    const todayStr = new Date().toISOString().split("T")[0];
+    const nowTimeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    if (selectedDate < todayStr || (selectedDate === todayStr && selectedTime <= nowTimeStr)) {
+      toast.error("Você não pode agendar um horário no passado!");
+      setStep(3);
+      return;
+    }
     setBooking(true);
     await db.entities.Appointment.create({
       barber_id: selectedBarber.id,
@@ -139,8 +146,8 @@ export default function Booking() {
       status: "agendado",
     });
 
-    // Upsert Client CRM record with updated stats
-    const existingClients = await db.entities.Client.filter({ email: user.email });
+    // Upsert Client CRM record with updated stats for this specific shop
+    const existingClients = await db.entities.Client.filter({ shop_id: selectedShop.id, email: user.email });
     if (existingClients.length > 0) {
       const c = existingClients[0];
       const newVisits = (c.total_visits || 0) + 1;
@@ -152,11 +159,13 @@ export default function Booking() {
         avg_ticket: newVisits > 0 ? Math.round(newSpent / newVisits) : 0,
         shop_id: selectedShop.id,
         barber_id: selectedBarber.id,
+        profile_id: user.id
       });
     } else {
       await db.entities.Client.create({
         name: user.full_name || user.email,
         email: user.email,
+        profile_id: user.id,
         shop_id: selectedShop.id,
         barber_id: selectedBarber.id,
         last_visit: selectedDate,

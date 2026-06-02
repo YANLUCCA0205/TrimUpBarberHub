@@ -1,7 +1,8 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { useAuth } from "@/lib/AuthContext";
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 
 import { User, Calendar, Save, LogOut, Phone, MapPin, Star, Edit2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,30 +32,66 @@ export default function Profile() {
   const [tab, setTab] = useState("historico");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  const [barberProfile, setBarberProfile] = useState(null);
+  const [linkRequest, setLinkRequest] = useState(null);
+  const [availableShops, setAvailableShops] = useState([]);
+  const [selectedShopId, setSelectedShopId] = useState("");
+  const [barberForm, setBarberForm] = useState({ name: "", bio: "", specialties: "" });
+  const [shopForm, setShopForm] = useState({ name: "", address: "", phone: "", startTime: "08:00", endTime: "19:00" });
+  const [barberLoading, setBarberLoading] = useState(false);
+  const [shopLoading, setShopLoading] = useState(false);
+
   useEffect(() => {
     if (!user) return;
     async function load() {
-      // Load appointments
-      const appts = await db.entities.Appointment.filter({ client_email: user.email }, "-date", 50);
-      setAppointments(appts);
+      try {
+        // Load appointments
+        const appts = await db.entities.Appointment.filter({ client_email: user.email }, "-date", 50);
+        setAppointments(appts);
 
-      // Find or create Client record linked to this user
-      const existing = await db.entities.Client.filter({ email: user.email });
-      if (existing.length > 0) {
-        setClient(existing[0]);
-        setForm(existing[0]);
-      } else {
-        // Auto-create Client for this user
-        const created = await db.entities.Client.create({
-          name: user.full_name || user.email.split("@")[0],
-          email: user.email,
-          total_visits: appts.filter(a => a.status === "concluido").length,
-          total_spent: appts.filter(a => a.status === "concluido").reduce((s, a) => s + (a.price || 0), 0),
-        });
-        setClient(created);
-        setForm(created);
+        // Find or create Client record linked to this user
+        const existing = await db.entities.Client.filter({ email: user.email });
+        if (existing.length > 0) {
+          setClient(existing[0]);
+          setForm(existing[0]);
+        } else {
+          // Auto-create Client for this user
+          const created = await db.entities.Client.create({
+            name: user.full_name || user.email.split("@")[0],
+            email: user.email,
+            total_visits: appts.filter(a => a.status === "concluido").length,
+            total_spent: appts.filter(a => a.status === "concluido").reduce((s, a) => s + (a.price || 0), 0),
+          });
+          setClient(created);
+          setForm(created);
+        }
+
+        // Load barber profile if exists
+        const barbers = await db.entities.Barber.filter({ profile_id: user.id });
+        if (barbers.length > 0) {
+          setBarberProfile(barbers[0]);
+          setBarberForm({
+            name: barbers[0].name || "",
+            bio: barbers[0].bio || "",
+            specialties: barbers[0].specialties ? barbers[0].specialties.join(", ") : ""
+          });
+          // Load pending link request
+          const reqs = await db.entities.BarberLinkRequest.filter({ profile_id: user.id, status: "pending" });
+          if (reqs.length > 0) {
+            setLinkRequest(reqs[0]);
+          }
+        } else {
+          setBarberForm({ name: user.full_name || "", bio: "", specialties: "" });
+        }
+
+        // Load shops list
+        const shopsData = await db.entities.Shop.list();
+        setAvailableShops(shopsData);
+      } catch (err) {
+        console.error("Error loading profile data:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [user]);
@@ -67,6 +104,92 @@ export default function Profile() {
     setEditing(false);
     toast.success("Perfil atualizado!");
     setSaving(false);
+  }
+
+  async function handleCreateBarber(e) {
+    e.preventDefault();
+    setBarberLoading(true);
+    try {
+      const created = await db.entities.Barber.create({
+        profile_id: user.id,
+        name: barberForm.name || user.full_name || "Barbeiro",
+        bio: barberForm.bio || "",
+        specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()) : [],
+        is_active: false
+      });
+      setBarberProfile(created);
+      toast.success("Perfil de barbeiro criado com sucesso!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao criar perfil de barbeiro.");
+    } finally {
+      setBarberLoading(false);
+    }
+  }
+
+  async function handleRequestLink(e) {
+    e.preventDefault();
+    if (!selectedShopId) {
+      toast.error("Por favor, selecione uma barbearia.");
+      return;
+    }
+    setBarberLoading(true);
+    try {
+      const req = await db.entities.BarberLinkRequest.create({
+        shop_id: selectedShopId,
+        profile_id: user.id,
+        barber_id: barberProfile.id,
+        status: "pending"
+      });
+      setLinkRequest(req);
+      toast.success("Solicitação de vínculo enviada!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao enviar solicitação.");
+    } finally {
+      setBarberLoading(false);
+    }
+  }
+
+  async function handleCreateShop(e) {
+    e.preventDefault();
+    if (!shopForm.name || !shopForm.address || !shopForm.phone) {
+      toast.error("Por favor, preencha todos os campos obrigatórios.");
+      return;
+    }
+    setShopLoading(true);
+    try {
+      const slug = shopForm.name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now().toString().slice(-4);
+      const workingHours = {
+        monday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+        tuesday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+        wednesday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+        thursday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+        friday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+        saturday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+        sunday: { start: shopForm.startTime, end: shopForm.endTime, active: false }
+      };
+
+      await db.entities.Shop.create({
+        owner_id: user.id,
+        name: shopForm.name,
+        address: shopForm.address,
+        phone: shopForm.phone,
+        slug: slug,
+        working_hours: workingHours,
+        is_active: true
+      });
+
+      toast.success("Barbearia criada! Você agora é administrador.");
+      setTimeout(() => {
+        window.location.href = "/admin";
+      }, 1500);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao criar barbearia.");
+    } finally {
+      setShopLoading(false);
+    }
   }
 
   function setF(key, val) { setForm(f => ({ ...f, [key]: val })); }
@@ -111,7 +234,7 @@ export default function Profile() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-muted rounded-xl mb-6">
-        {[["historico", "Histórico"], ["perfil", "Meus dados"], ["endereco", "Endereço"]].map(([k, l]) => (
+        {[["historico", "Histórico"], ["perfil", "Meus dados"], ["endereco", "Endereço"], ["equipe", "Junte-se à equipe"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
             {l}
@@ -267,6 +390,138 @@ export default function Profile() {
               <Button variant="outline" onClick={() => { setEditing(false); setForm(client); }} className="rounded-xl">Cancelar</Button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Junte-se à equipe */}
+      {tab === "equipe" && (
+        <div className="space-y-6">
+          <div className="bg-card border border-border/50 p-6 rounded-2xl">
+            <h3 className="font-bold text-lg mb-2">Junte-se à nossa equipe</h3>
+            <p className="text-sm text-muted-foreground">
+              Escolha uma das opções abaixo para evoluir sua conta e começar a usar as ferramentas profissionais do TrimUp.
+            </p>
+          </div>
+
+          {(user.roles?.includes("barber") || user.roles?.includes("admin") || user.role === "barber" || user.role === "admin") && (
+            <div className="bg-emerald-500/10 border border-emerald-500/25 p-4 rounded-xl text-emerald-400 text-sm">
+              <p className="font-semibold mb-1">Você já possui acesso profissional:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                {(user.roles?.includes("admin") || user.role === "admin") && <li><strong>Administrador:</strong> Você gerencia uma ou mais barbearias. Acesso ao <Link to="/admin" className="underline font-bold">Painel Admin</Link> liberado.</li>}
+                {(user.roles?.includes("barber") || user.role === "barber") && <li><strong>Barbeiro:</strong> Você está vinculado a uma equipe. Acesso ao <Link to="/barber-dashboard" className="underline font-bold">Painel do Barbeiro</Link> liberado.</li>}
+              </ul>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* CARD 1: TORNAR-SE BARBEIRO */}
+            <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
+              <div>
+                <h4 className="font-bold text-base mb-1">Quero ser Barbeiro</h4>
+                <p className="text-xs text-muted-foreground mb-4">Crie seu perfil profissional, defina especialidades e associe-se a uma barbearia parceira.</p>
+
+                {barberProfile ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-muted/50 rounded-xl text-xs space-y-1">
+                      <p><strong>Nome Profissional:</strong> {barberProfile.name}</p>
+                      <p><strong>Status:</strong> {barberProfile.shop_id ? "Vinculado a uma barbearia" : "Sem vínculo ativo"}</p>
+                    </div>
+
+                    {!barberProfile.shop_id ? (
+                      <div className="space-y-3 mt-3">
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-xs">
+                          Você ainda não está vinculado a uma barbearia.
+                        </div>
+
+                        {linkRequest ? (
+                          <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl text-xs">
+                            Solicitação de vínculo pendente para a barbearia: 
+                            <strong className="block mt-1">{availableShops.find(s => s.id === linkRequest.shop_id)?.name || "Barbearia"}</strong>
+                          </div>
+                        ) : (
+                          <form onSubmit={handleRequestLink} className="space-y-3">
+                            <Label className="text-xs text-muted-foreground">Selecione a Barbearia:</Label>
+                            <select 
+                              value={selectedShopId} 
+                              onChange={e => setSelectedShopId(e.target.value)}
+                              className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                              required
+                            >
+                              <option value="">Selecione...</option>
+                              {availableShops.map(s => (
+                                <option key={s.id} value={s.id}>{s.name} ({s.address})</option>
+                              ))}
+                            </select>
+                            <Button type="submit" disabled={barberLoading} className="w-full text-xs h-9">
+                              Solicitar Vínculo
+                            </Button>
+                          </form>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs">
+                        Vinculado com sucesso à barbearia <strong>{availableShops.find(s => s.id === barberProfile.shop_id)?.name}</strong>!
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <form onSubmit={handleCreateBarber} className="space-y-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Nome Profissional</Label>
+                      <Input value={barberForm.name} onChange={e => setBarberForm({ ...barberForm, name: e.target.value })} required placeholder="Ex: Barber João" className="h-9 text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Biografia</Label>
+                      <Textarea value={barberForm.bio} onChange={e => setBarberForm({ ...barberForm, bio: e.target.value })} placeholder="Ex: Especialista em corte degradê e barba clássica..." className="text-xs h-16 resize-none" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Especialidades (separadas por vírgula)</Label>
+                      <Input value={barberForm.specialties} onChange={e => setBarberForm({ ...barberForm, specialties: e.target.value })} placeholder="Ex: Degradê, Barba, Pigmentação" className="h-9 text-xs" />
+                    </div>
+                    <Button type="submit" disabled={barberLoading} className="w-full text-xs h-9 mt-2">
+                      Criar Perfil Profissional
+                    </Button>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            {/* CARD 2: TORNAR-SE ADMIN (CRIAR BARBEARIA) */}
+            <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
+              <div>
+                <h4 className="font-bold text-base mb-1">Cadastrar Barbearia</h4>
+                <p className="text-xs text-muted-foreground mb-4">Crie sua barbearia para começar a gerenciar sua agenda, equipe e faturamento.</p>
+
+                <form onSubmit={handleCreateShop} className="space-y-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Nome da Barbearia</Label>
+                    <Input value={shopForm.name} onChange={e => setShopForm({ ...shopForm, name: e.target.value })} required placeholder="Ex: Barbearia Premium" className="h-9 text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Endereço Completo</Label>
+                    <Input value={shopForm.address} onChange={e => setShopForm({ ...shopForm, address: e.target.value })} required placeholder="Ex: Av. Paulista, 1000 - São Paulo" className="h-9 text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Telefone Comercial</Label>
+                    <Input value={shopForm.phone} onChange={e => setShopForm({ ...shopForm, phone: e.target.value })} required placeholder="(11) 99999-9999" className="h-9 text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Abre às</Label>
+                      <Input type="time" value={shopForm.startTime} onChange={e => setShopForm({ ...shopForm, startTime: e.target.value })} required className="h-9 text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Fecha às</Label>
+                      <Input type="time" value={shopForm.endTime} onChange={e => setShopForm({ ...shopForm, endTime: e.target.value })} required className="h-9 text-xs" />
+                    </div>
+                  </div>
+                  <Button type="submit" disabled={shopLoading} className="w-full text-xs h-9 mt-2">
+                    Criar Barbearia & Ser Admin
+                  </Button>
+                </form>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

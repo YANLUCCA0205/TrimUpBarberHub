@@ -1,4 +1,4 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
 
@@ -213,6 +213,15 @@ export default function Agenda() {
       toast.error("Preencha os campos obrigatórios");
       return;
     }
+    const todayStr = new Date().toISOString().split("T")[0];
+    const nowTimeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    if (form.date < todayStr || (form.date === todayStr && form.time < nowTimeStr)) {
+      if (["agendado", "confirmado", "em_andamento"].includes(form.status)) {
+        toast.error("Não é possível agendar horários pendentes ou futuros no passado!");
+        return;
+      }
+    }
+
     const conflict = appointments.find(a =>
       a.barber_id === form.barber_id &&
       a.date === form.date &&

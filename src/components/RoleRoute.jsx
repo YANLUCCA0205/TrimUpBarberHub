@@ -11,7 +11,7 @@ export default function RoleRoute({ allowedRoles, redirectTo = "/" }) {
 
   if (isLoadingAuth) return null;
   if (!isAuthenticated || !user) return <Navigate to="/login" replace />;
-  if (!allowedRoles.includes(user.role)) return <Navigate to={redirectTo} replace />;
+  if (!allowedRoles.some(r => user.roles?.includes(r) || user.role === r)) return <Navigate to={redirectTo} replace />;
 
   return <Outlet />;
 }

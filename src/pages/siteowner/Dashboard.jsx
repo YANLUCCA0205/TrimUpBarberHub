@@ -1,4 +1,4 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
 
@@ -32,6 +32,9 @@ export default function SiteOwnerDashboard() {
     load();
   }, []);
 
+  const shopMap = Object.fromEntries(shops.map(s => [s.id, s]));
+  const planMap = Object.fromEntries(plans.map(p => [p.id, p]));
+
   const activeSubs = subscriptions.filter(s => s.status === "active" || s.status === "trial");
   const mrr = activeSubs.reduce((sum, s) => sum + (s.monthly_value || 0), 0);
   const arr = mrr * 12;
@@ -39,7 +42,7 @@ export default function SiteOwnerDashboard() {
   // Group subscriptions by plan name
   const planCounts = {};
   subscriptions.forEach(s => {
-    const name = s.plan_name || "Free";
+    const name = planMap[s.plan_id]?.name || "Free";
     planCounts[name] = (planCounts[name] || 0) + 1;
   });
 
@@ -148,12 +151,15 @@ export default function SiteOwnerDashboard() {
           <p className="text-sm text-muted-foreground text-center py-8">Nenhuma assinatura cadastrada ainda. Vá em Planos → crie planos → depois vincule barbearias em Assinaturas.</p>
         ) : (
           <div className="space-y-2">
-            {subscriptions.slice(0, 8).map(sub => (
-              <div key={sub.id} className="flex items-center justify-between py-2.5 border-b border-border/20 last:border-0">
-                <div>
-                  <p className="text-sm font-medium">{sub.barbershop_name || sub.barbershop_id}</p>
-                  <p className="text-xs text-muted-foreground">{sub.plan_name} · R${sub.monthly_value || 0}/mês</p>
-                </div>
+            {subscriptions.slice(0, 8).map(sub => {
+              const shopName = shopMap[sub.shop_id]?.name || "Barbearia";
+              const planName = planMap[sub.plan_id]?.name || "Plano";
+              return (
+                <div key={sub.id} className="flex items-center justify-between py-2.5 border-b border-border/20 last:border-0">
+                  <div>
+                    <p className="text-sm font-medium">{shopName}</p>
+                    <p className="text-xs text-muted-foreground">{planName} · R${sub.monthly_value || 0}/mês</p>
+                  </div>
                 <div className="flex items-center gap-2">
                   {sub.renewal_date && <span className="text-xs text-muted-foreground">Renova {sub.renewal_date}</span>}
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -166,8 +172,9 @@ export default function SiteOwnerDashboard() {
                   </span>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
+        </div>
         )}
       </div>
     </div>

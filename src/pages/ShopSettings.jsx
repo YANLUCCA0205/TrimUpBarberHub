@@ -1,6 +1,8 @@
-const db = globalThis.__B44_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
+import db from '@/lib/db';
 
 import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 import { useAuth } from "@/lib/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -43,6 +45,7 @@ export default function ShopSettings() {
   const [editingBarber, setEditingBarber] = useState(null);
   const [barberForm, setBarberForm] = useState({});
   const [showBarberForm, setShowBarberForm] = useState(false);
+  const [linkRequests, setLinkRequests] = useState([]);
 
   // Services state
   const [services, setServices] = useState([]);
@@ -55,16 +58,45 @@ export default function ShopSettings() {
     async function load() {
       const shops = await db.entities.Shop.filter({ owner_email: user.email });
       if (shops.length > 0) {
-        setShop(shops[0]);
-        setForm(shops[0]);
-        const [b, s] = await Promise.all([
-          db.entities.Barber.filter({ shop_id: shops[0].id }),
+        const currentShop = shops[0];
+        setShop(currentShop);
+        setForm(currentShop);
+        
+        const [b, s, reqs] = await Promise.all([
+          db.entities.Barber.filter({ shop_id: currentShop.id }),
           db.entities.Service.filter({ barber_id: { $exists: true } }),
+          db.entities.BarberLinkRequest.filter({ shop_id: currentShop.id, status: "pending" })
         ]);
+        
         setBarbers(b);
+        
         // Get services for all barbers in this shop
         const barberIds = b.map(x => x.id);
         setServices(s.filter(x => barberIds.includes(x.barber_id)));
+
+        // Load details for each pending request
+        const reqsWithDetails = await Promise.all(reqs.map(async (r) => {
+          try {
+            const bProfile = await db.entities.Barber.get(r.barber_id);
+            const { data: userProf } = await supabase
+              .from('profiles')
+              .select('email')
+              .eq('id', r.profile_id)
+              .maybeSingle();
+            
+            return {
+              ...r,
+              barber_name: bProfile ? bProfile.name : "Barbeiro",
+              barber_specialties: bProfile ? bProfile.specialties : [],
+              barber_photo: bProfile ? bProfile.photo : null,
+              email: userProf ? userProf.email : ""
+            };
+          } catch (e) {
+            console.error("Erro ao carregar detalhes da solicitação:", e);
+            return r;
+          }
+        }));
+        setLinkRequests(reqsWithDetails);
       }
       setLoading(false);
     }
@@ -109,8 +141,67 @@ export default function ShopSettings() {
   }
 
   async function deleteBarber(id) {
-    await db.entities.Barber.delete(id);
-    setBarbers(barbers.filter(b => b.id !== id));
+    const bObj = barbers.find(b => b.id === id);
+    try {
+      if (bObj && bObj.profile_id) {
+        // É um barbeiro vinculado com conta real. Desvincular.
+        await db.entities.Barber.update(id, { shop_id: null });
+        // Remover do shop_memberships
+        await supabase
+          .from('shop_memberships')
+          .delete()
+          .eq('shop_id', shop.id)
+          .eq('profile_id', bObj.profile_id)
+          .eq('role', 'barber');
+        
+        // Registrar desvinculação no histórico
+        await db.entities.BarberLinkHistory.create({
+          shop_id: shop.id,
+          profile_id: bObj.profile_id,
+          barber_id: id,
+          action: 'unlinked',
+          notes: 'Desvinculado pelo administrador da barbearia.'
+        });
+
+        toast.success(`${bObj.name} foi desvinculado com sucesso.`);
+      } else {
+        // Criado manualmente pelo admin, deleta permanente
+        await db.entities.Barber.delete(id);
+        toast.success("Barbeiro excluído.");
+      }
+      setBarbers(barbers.filter(b => b.id !== id));
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao remover/desvincular barbeiro.");
+    }
+  }
+
+  async function handleAcceptRequest(reqId) {
+    try {
+      await db.entities.BarberLinkRequest.update(reqId, { status: "accepted" });
+      toast.success("Solicitação de vínculo aprovada!");
+      
+      // Recarregar os barbeiros
+      if (shop) {
+        const b = await db.entities.Barber.filter({ shop_id: shop.id });
+        setBarbers(b);
+      }
+      setLinkRequests(prev => prev.filter(r => r.id !== reqId));
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao aprovar solicitação.");
+    }
+  }
+
+  async function handleRejectRequest(reqId) {
+    try {
+      await db.entities.BarberLinkRequest.update(reqId, { status: "rejected" });
+      toast.success("Solicitação de vínculo rejeitada.");
+      setLinkRequests(prev => prev.filter(r => r.id !== reqId));
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao rejeitar solicitação.");
+    }
   }
 
   function editBarber(b) {
@@ -263,6 +354,49 @@ export default function ShopSettings() {
       {/* Tab 1: Barbeiros */}
       {activeTab === 1 && (
         <div className="space-y-4">
+          {/* Solicitações de Vínculo Pendentes */}
+          {linkRequests.length > 0 && (
+            <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/25 space-y-3">
+              <h4 className="font-semibold text-amber-500 flex items-center gap-2">
+                <Users className="w-4 h-4" /> Solicitações de Vínculo Pendentes ({linkRequests.length})
+              </h4>
+              <p className="text-xs text-muted-foreground">Profissionais solicitando vínculo com a sua barbearia:</p>
+              
+              <div className="space-y-2 mt-2">
+                {linkRequests.map(r => (
+                  <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {r.barber_photo ? (
+                          <img src={r.barber_photo} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-bold text-primary/50">{r.barber_name?.[0]}</span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{r.barber_name}</p>
+                        <p className="text-[10px] text-muted-foreground">{r.email}</p>
+                        {r.barber_specialties?.length > 0 && (
+                          <p className="text-[10px] text-muted-foreground/80 mt-0.5">
+                            Especialidades: {r.barber_specialties.join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => handleRejectRequest(r.id)} className="h-8 text-xs text-muted-foreground hover:text-destructive">
+                        Rejeitar
+                      </Button>
+                      <Button size="sm" onClick={() => handleAcceptRequest(r.id)} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg">
+                        Aceitar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">{barbers.length} barbeiro(s) cadastrado(s)</p>
             <Button size="sm" onClick={() => { setEditingBarber(null); setBarberForm({}); setShowBarberForm(true); }}

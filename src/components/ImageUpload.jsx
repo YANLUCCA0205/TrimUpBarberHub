@@ -137,7 +137,7 @@ export default function ImageUpload({
       }
     } catch (err) {
       console.error("Upload error:", err);
-      setError("Erro ao fazer upload. Tente novamente.");
+      setError(`Erro no upload: ${err?.message || "Tente novamente."}`);
       setPreview(null);
     } finally {
       setUploading(false);

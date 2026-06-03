@@ -43,10 +43,12 @@ export default function Profile() {
   const [barberLoading, setBarberLoading] = useState(false);
   const [shopLoading, setShopLoading] = useState(false);
   const [userShops, setUserShops] = useState([]);
+  const [avatarUrl, setAvatarUrl] = useState("");
 
   useEffect(() => {
     if (!user) return;
     async function load() {
+      setAvatarUrl(user?.avatar_url || "");
       // 1. Load appointments
       let appts = [];
       try {
@@ -287,15 +289,16 @@ export default function Profile() {
         {editing ? (
           <div className="flex justify-center mb-4">
             <ImageUpload
-              value={client?.avatar_url || user?.avatar_url}
+              value={avatarUrl}
               onChange={async (url) => {
                 await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id);
-                setForm(prev => ({ ...prev, avatar_url: url }));
+                setAvatarUrl(url);
                 toast.success('Foto atualizada!');
               }}
               onRemove={async () => {
                 await supabase.from('profiles').update({ avatar_url: null }).eq('id', user.id);
-                setForm(prev => ({ ...prev, avatar_url: null }));
+                setAvatarUrl("");
+                toast.success('Foto removida!');
               }}
               label="Foto de Perfil"
               aspect="square"
@@ -304,8 +307,8 @@ export default function Profile() {
           </div>
         ) : (
           <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4 overflow-hidden">
-            {(client?.avatar_url || user?.avatar_url) ? (
-              <img src={client?.avatar_url || user?.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
               <User className="w-10 h-10 text-primary/50" />
             )}

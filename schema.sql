@@ -60,8 +60,10 @@ CREATE TABLE public.notification_preferences (
 CREATE TABLE public.plans (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     name text NOT NULL,
+    description text,
     monthly_price numeric(10, 2) NOT NULL,
     annual_price numeric(10, 2) NOT NULL,
+    annual_discount numeric(5, 2) DEFAULT 0.00,
     trial_days integer DEFAULT 0,
     max_barbers integer DEFAULT 1,
     max_clients integer DEFAULT 100,

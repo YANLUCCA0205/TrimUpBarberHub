@@ -35,8 +35,18 @@ import SiteOwnerPlanos from './pages/siteowner/Planos';
 import SiteOwnerAssinaturas from './pages/siteowner/Assinaturas';
 import SiteOwnerSimulador from './pages/siteowner/Simulador';
 
+import { getSimulation } from '@/lib/simulation';
+
 function SmartHome() {
   const { user } = useAuth();
+  
+  const simulation = getSimulation();
+  if (simulation?.active) {
+    if (simulation.role === 'admin') return <Navigate to="/admin" replace />;
+    if (simulation.role === 'barber') return <Navigate to="/barber-dashboard" replace />;
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (user?.roles?.includes('siteowner')) return <Navigate to="/siteowner" replace />;
   if (user?.roles?.includes('admin')) return <Navigate to="/admin" replace />;
   if (user?.roles?.includes('barber')) return <Navigate to="/barber-dashboard" replace />;

@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { notifyNewAppointment } from "../lib/notifications";
 
 // Calculate real weekly revenue from appointments
 function getWeeklyRevenue(appointments) {
@@ -44,6 +46,19 @@ export default function BarberDashboard() {
   const [newService, setNewService] = useState({ name: "", price: "", duration_minutes: "30", category: "corte", description: "" });
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const [shopClients, setShopClients] = useState([]);
+  const [showApptDialog, setShowApptDialog] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientSuggestions, setClientSuggestions] = useState([]);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [isNewClient, setIsNewClient] = useState(false);
+  const [newClientForm, setNewClientForm] = useState({ name: "", email: "", phone: "" });
+  const [apptForm, setApptForm] = useState({ service_id: "", date: new Date().toISOString().split('T')[0], time: "09:00", notes: "" });
+  const [savingAppt, setSavingAppt] = useState(false);
+
+  const TIMES = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30",
+    "13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00"];
+
   useEffect(() => {
     async function load() {
       if (!user) return;
@@ -51,15 +66,19 @@ export default function BarberDashboard() {
       if (barbers.length > 0) {
         const currentBarber = barbers[0];
         setBarber(currentBarber);
-        const [a, s, membershipRes] = await Promise.all([
+        const [a, s, membershipRes, clientsRes] = await Promise.all([
           db.entities.Appointment.filter({ barber_id: currentBarber.id }, "-date", 500),
           db.entities.Service.filter({ barber_id: currentBarber.id }),
           currentBarber.shop_id 
             ? supabase.from('shop_memberships').select('role').eq('shop_id', currentBarber.shop_id).eq('profile_id', user.id).maybeSingle()
-            : Promise.resolve({ data: null })
+            : Promise.resolve({ data: null }),
+          currentBarber.shop_id
+            ? db.entities.Client.filter({ shop_id: currentBarber.shop_id })
+            : Promise.resolve([])
         ]);
         setAppointments(a);
         setServices(s);
+        setShopClients(clientsRes || []);
         const isShopAdmin = membershipRes?.data?.role === 'owner' || membershipRes?.data?.role === 'admin' || user?.roles?.includes('siteowner');
         setIsAdmin(isShopAdmin);
       }
@@ -84,6 +103,150 @@ export default function BarberDashboard() {
     setServices([...services, s]);
     setNewService({ name: "", price: "", duration_minutes: "30", category: "corte", description: "" });
     setShowServiceDialog(false);
+  }
+
+  const handleClientSearch = (val) => {
+    setClientSearch(val);
+    if (val.length < 2) {
+      setClientSuggestions([]);
+      return;
+    }
+    const lv = val.toLowerCase();
+    const matches = shopClients.filter(c =>
+      c.name?.toLowerCase().includes(lv) ||
+      c.phone?.includes(val) ||
+      c.email?.toLowerCase().includes(lv)
+    );
+    setClientSuggestions(matches.slice(0, 5));
+  };
+
+  const selectClient = (c) => {
+    setSelectedClient(c);
+    setClientSearch(c.name);
+    setClientSuggestions([]);
+    setIsNewClient(false);
+  };
+
+  async function saveAppointment() {
+    if (!barber?.shop_id) { toast.error("Você precisa estar vinculado a uma barbearia"); return; }
+    
+    let clientRecord = selectedClient;
+
+    if (isNewClient) {
+      const trimmedName = newClientForm.name?.trim();
+      const trimmedEmail = newClientForm.email?.trim().toLowerCase();
+      const trimmedPhone = newClientForm.phone?.trim();
+
+      if (!trimmedName) {
+        toast.error("Nome do cliente é obrigatório");
+        return;
+      }
+
+      // Check duplicates
+      const duplicate = shopClients.find(c =>
+        (trimmedEmail && c.email?.toLowerCase() === trimmedEmail) ||
+        (trimmedPhone && c.phone === trimmedPhone) ||
+        (c.name?.toLowerCase() === trimmedName.toLowerCase())
+      );
+
+      if (duplicate) {
+        toast.error("Cliente já cadastrado com estes dados!");
+        setSelectedClient(duplicate);
+        setClientSearch(duplicate.name);
+        setIsNewClient(false);
+        return;
+      }
+
+      setSavingAppt(true);
+      try {
+        clientRecord = await db.entities.Client.create({
+          shop_id: barber.shop_id,
+          name: trimmedName,
+          email: trimmedEmail || null,
+          phone: trimmedPhone || null,
+          source: 'manual'
+        });
+        setShopClients(prev => [...prev, clientRecord]);
+      } catch (err) {
+        console.error("Error creating client record:", err);
+        toast.error("Erro ao cadastrar cliente");
+        setSavingAppt(false);
+        return;
+      }
+    }
+
+    if (!clientRecord) {
+      toast.error("Selecione ou cadastre um cliente");
+      return;
+    }
+
+    if (!apptForm.service_id || !apptForm.date || !apptForm.time) {
+      toast.error("Preencha os campos obrigatórios");
+      return;
+    }
+
+    // Check conflict
+    const conflict = appointments.find(a =>
+      a.barber_id === barber.id &&
+      a.date === apptForm.date &&
+      a.time === apptForm.time &&
+      !["cancelado", "faltou"].includes(a.status)
+    );
+
+    if (conflict) {
+      toast.error(`Horário conflitante! O cliente ${conflict.client_name} já está agendado neste horário.`);
+      return;
+    }
+
+    setSavingAppt(true);
+    try {
+      const selectedService = services.find(s => s.id === apptForm.service_id);
+      const apptData = {
+        barber_id: barber.id,
+        barber_name: barber.name,
+        shop_id: barber.shop_id,
+        client_id: clientRecord.profile_id || null,
+        client_name: clientRecord.name,
+        client_email: clientRecord.email || "",
+        service_id: apptForm.service_id,
+        service_name: selectedService?.name || "Serviço",
+        price: selectedService?.price || 0,
+        date: apptForm.date,
+        time: apptForm.time,
+        notes: apptForm.notes || "",
+        status: "confirmado"
+      };
+
+      const created = await db.entities.Appointment.create(apptData);
+      setAppointments(prev => [created, ...prev]);
+
+      if (clientRecord.profile_id) {
+        try {
+          await notifyNewAppointment(clientRecord.profile_id, {
+            barberName: barber.name,
+            serviceName: apptData.service_name,
+            date: apptData.date,
+            time: apptData.time
+          });
+        } catch (nErr) {
+          console.warn("Failed to notify client:", nErr);
+        }
+      }
+
+      toast.success("Agendamento criado!");
+      setShowApptDialog(false);
+      // Reset form
+      setClientSearch("");
+      setSelectedClient(null);
+      setIsNewClient(false);
+      setNewClientForm({ name: "", email: "", phone: "" });
+      setApptForm({ service_id: "", date: new Date().toISOString().split('T')[0], time: "09:00", notes: "" });
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao salvar agendamento");
+    } finally {
+      setSavingAppt(false);
+    }
   }
 
   if (loading) {
@@ -128,13 +291,178 @@ export default function BarberDashboard() {
           <h1 className="text-2xl font-bold">Painel</h1>
           <p className="text-sm text-muted-foreground">{barber.name}</p>
         </div>
-        {isAdmin && (
-          <Link to="/shop-settings">
-            <Button variant="outline" size="sm" className="rounded-xl border-border/50 gap-2">
-              <Settings className="w-4 h-4" /> Configurar Barbearia
-            </Button>
-          </Link>
-        )}
+        <div className="flex items-center gap-3">
+          <Dialog open={showApptDialog} onOpenChange={setShowApptDialog}>
+            <DialogTrigger asChild>
+              <Button className="bg-primary text-primary-foreground rounded-xl flex items-center gap-2">
+                <Plus className="w-4.5 h-4.5" /> Novo Agendamento
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border/50 max-w-md w-full max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Novo Agendamento</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                {/* Seleção ou Cadastro de Cliente */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Label className="text-sm">Cliente</Label>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setIsNewClient(!isNewClient);
+                        setSelectedClient(null);
+                        setClientSearch("");
+                      }}
+                      className="text-xs text-amber-500 hover:underline font-medium"
+                    >
+                      {isNewClient ? "Buscar Existente" : "Cadastrar Novo"}
+                    </button>
+                  </div>
+
+                  {!isNewClient ? (
+                    <div className="relative">
+                      <Input
+                        value={clientSearch}
+                        onChange={e => handleClientSearch(e.target.value)}
+                        placeholder="Buscar por nome, e-mail ou telefone..."
+                        className="bg-muted border-border/50 rounded-xl"
+                      />
+                      {clientSuggestions.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
+                          {clientSuggestions.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => selectClient(c)}
+                              className="w-full text-left px-4 py-2 text-xs hover:bg-zinc-900 transition-colors border-b border-zinc-900 last:border-0"
+                            >
+                              <p className="font-semibold text-white">{c.name}</p>
+                              <p className="text-[10px] text-zinc-500">{c.phone || "Sem telefone"} • {c.email || "Sem e-mail"}</p>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {selectedClient && (
+                        <p className="text-xs text-green-400 mt-1.5 flex items-center gap-1 font-medium">
+                          ✓ Selecionado: {selectedClient.name}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 p-3.5 bg-muted/30 rounded-xl border border-border/50">
+                      <div>
+                        <Label className="text-[11px] text-zinc-400">Nome Completo</Label>
+                        <Input
+                          value={newClientForm.name}
+                          onChange={e => setNewClientForm(f => ({ ...f, name: e.target.value }))}
+                          placeholder="Ex: Carlos Silva"
+                          className="bg-muted border-border/50 rounded-xl h-9 text-xs"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <Label className="text-[11px] text-zinc-400">Celular / WhatsApp</Label>
+                          <Input
+                            value={newClientForm.phone}
+                            onChange={e => setNewClientForm(f => ({ ...f, phone: e.target.value }))}
+                            placeholder="Ex: (11) 99999-9999"
+                            className="bg-muted border-border/50 rounded-xl h-9 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[11px] text-zinc-400">E-mail</Label>
+                          <Input
+                            value={newClientForm.email}
+                            type="email"
+                            onChange={e => setNewClientForm(f => ({ ...f, email: e.target.value }))}
+                            placeholder="Ex: carlos@email.com"
+                            className="bg-muted border-border/50 rounded-xl h-9 text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Seleção de Serviço */}
+                <div>
+                  <Label className="text-sm block mb-1.5">Serviço</Label>
+                  <Select 
+                    value={apptForm.service_id} 
+                    onValueChange={v => setApptForm(f => ({ ...f, service_id: v }))}
+                  >
+                    <SelectTrigger className="bg-muted border-border/50 rounded-xl">
+                      <SelectValue placeholder="Selecione um serviço..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {services.map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} (R${s.price} • {s.duration_minutes} min)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Data e Hora */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-sm block mb-1.5">Data</Label>
+                    <Input
+                      type="date"
+                      value={apptForm.date}
+                      onChange={e => setApptForm(f => ({ ...f, date: e.target.value }))}
+                      className="bg-muted border-border/50 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm block mb-1.5">Horário</Label>
+                    <Select
+                      value={apptForm.time}
+                      onValueChange={v => setApptForm(f => ({ ...f, time: v }))}
+                    >
+                      <SelectTrigger className="bg-muted border-border/50 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TIMES.map(t => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Observações */}
+                <div>
+                  <Label className="text-sm block mb-1.5">Observações (opcional)</Label>
+                  <Textarea
+                    value={apptForm.notes}
+                    onChange={e => setApptForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Algum detalhe sobre o corte..."
+                    className="bg-muted border-border/50 rounded-xl resize-none h-16 text-xs"
+                  />
+                </div>
+
+                <Button 
+                  onClick={saveAppointment} 
+                  disabled={savingAppt} 
+                  className="w-full bg-primary text-primary-foreground rounded-xl font-medium"
+                >
+                  {savingAppt ? "Criando..." : "Confirmar Agendamento"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          {isAdmin && (
+            <Link to="/shop-settings">
+              <Button variant="outline" size="sm" className="rounded-xl border-border/50 gap-2 h-10">
+                <Settings className="w-4 h-4" /> Configurar Barbearia
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Agenda de Hoje */}

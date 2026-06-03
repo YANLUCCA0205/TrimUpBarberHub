@@ -37,6 +37,7 @@ import SiteOwnerSimulador from './pages/siteowner/Simulador';
 
 function SmartHome() {
   const { user } = useAuth();
+  if (user?.roles?.includes('siteowner')) return <Navigate to="/siteowner" replace />;
   if (user?.roles?.includes('admin')) return <Navigate to="/admin" replace />;
   if (user?.roles?.includes('barber')) return <Navigate to="/barber-dashboard" replace />;
   return <Navigate to="/dashboard" replace />;

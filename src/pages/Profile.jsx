@@ -47,12 +47,17 @@ export default function Profile() {
   useEffect(() => {
     if (!user) return;
     async function load() {
+      // 1. Load appointments
+      let appts = [];
       try {
-        // Load appointments
-        const appts = await db.entities.Appointment.filter({ client_email: user.email }, "-date", 50);
+        appts = await db.entities.Appointment.filter({ client_email: user.email }, "-date", 50);
         setAppointments(appts);
+      } catch (err) {
+        console.error("Error loading appointments:", err);
+      }
 
-        // Find or create Client record linked to this user
+      // 2. Find or create Client record linked to this user
+      try {
         const existing = await db.entities.Client.filter({ email: user.email });
         if (existing.length > 0) {
           setClient(existing[0]);
@@ -60,6 +65,7 @@ export default function Profile() {
         } else {
           // Auto-create Client for this user
           const created = await db.entities.Client.create({
+            profile_id: user.id,
             name: user.full_name || user.email.split("@")[0],
             email: user.email,
             total_visits: appts.filter(a => a.status === "concluido").length,
@@ -68,8 +74,12 @@ export default function Profile() {
           setClient(created);
           setForm(created);
         }
+      } catch (err) {
+        console.error("Error loading or creating client record:", err);
+      }
 
-        // Load barber profile if exists
+      // 3. Load barber profile if exists
+      try {
         const barbers = await db.entities.Barber.filter({ profile_id: user.id });
         if (barbers.length > 0) {
           setBarberProfile(barbers[0]);
@@ -86,19 +96,27 @@ export default function Profile() {
         } else {
           setBarberForm({ name: user.full_name || "", bio: "", specialties: "" });
         }
+      } catch (err) {
+        console.error("Error loading barber profile:", err);
+      }
 
-        // Load shops list
+      // 4. Load shops list
+      try {
         const shopsData = await db.entities.Shop.list();
         setAvailableShops(shopsData);
+      } catch (err) {
+        console.error("Error loading available shops:", err);
+      }
 
-        // Load user's own shops
+      // 5. Load user's own shops
+      try {
         const ownedShops = await db.entities.Shop.filter({ owner_id: user.id });
         setUserShops(ownedShops);
       } catch (err) {
-        console.error("Error loading profile data:", err);
-      } finally {
-        setLoading(false);
+        console.error("Error loading owned shops:", err);
       }
+
+      setLoading(false);
     }
     load();
   }, [user]);

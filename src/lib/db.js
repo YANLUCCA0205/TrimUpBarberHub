@@ -320,9 +320,11 @@ export const db = {
     Core: {
       UploadFile: async (file) => {
         // Upload to 'uploads' bucket
+        const { data: { user } } = await supabase.auth.getUser();
+        const userId = user?.id || 'anonymous';
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-        const filePath = `public/${fileName}`;
+        const filePath = `${userId}/${fileName}`;
 
         const { data, error } = await supabase.storage
           .from('uploads')

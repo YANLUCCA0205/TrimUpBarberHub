@@ -42,3 +42,9 @@ CREATE POLICY "Usuário atualiza próprias notificações"
   ON public.notifications
   FOR UPDATE
   USING (profile_id = public.my_profile_id());
+
+-- 8. client_records: Permitir que barbeiros gerenciem clientes da loja
+CREATE POLICY "Barbeiros gerenciam clientes da loja"
+  ON public.client_records
+  FOR ALL
+  USING (public.is_shop_member(shop_id, 'barber'));

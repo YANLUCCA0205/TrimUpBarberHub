@@ -1,9 +1,12 @@
 -- ==============================================
 -- Storage Policies — Bucket 'uploads'
 -- Execute no SQL Editor do Supabase Dashboard
--- ANTES: Crie o bucket 'uploads' como PÚBLICO no Dashboard
--- (Storage > New Bucket > Name: uploads > Public: ON)
 -- ==============================================
+
+-- 0. Garantir a existência do bucket 'uploads' público
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('uploads', 'uploads', true)
+ON CONFLICT (id) DO NOTHING;
 
 -- Permitir que usuários autenticados façam upload
 CREATE POLICY "Autenticados fazem upload"

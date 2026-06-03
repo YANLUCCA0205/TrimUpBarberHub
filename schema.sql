@@ -504,6 +504,7 @@ ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.client_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- Exemplo de Políticas RLS Básicas (Podem ser refinadas no Dashboard)
 
@@ -539,6 +540,8 @@ CREATE POLICY "Proprietários da loja veem assinatura" ON public.subscriptions F
 -- Barbers
 CREATE POLICY "Qualquer um vê barbeiros" ON public.barbers FOR SELECT USING (true);
 CREATE POLICY "Dono ou Admin edita barbeiros" ON public.barbers FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('siteowner'));
+CREATE POLICY "Usuário cria próprio perfil de barbeiro" ON public.barbers FOR INSERT WITH CHECK (profile_id = auth.uid());
+CREATE POLICY "Usuário edita próprio perfil de barbeiro" ON public.barbers FOR UPDATE USING (profile_id = public.my_profile_id());
 
 -- Services
 CREATE POLICY "Qualquer um vê serviços" ON public.services FOR SELECT USING (true);
@@ -550,7 +553,8 @@ CREATE POLICY "Gestão de produtos" ON public.products FOR ALL USING (public.is_
 
 -- Client Records
 CREATE POLICY "Membros da loja veem clientes" ON public.client_records FOR SELECT USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.is_shop_member(shop_id, 'barber') OR public.has_role('siteowner'));
-CREATE POLICY "Gestão de fichas de clientes" ON public.client_records FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.has_role('siteowner'));
+CREATE POLICY "Gestão de fichas de clientes" ON public.client_records FOR ALL USING (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.is_shop_member(shop_id, 'barber') OR public.has_role('siteowner'));
+CREATE POLICY "Usuário gerencia próprio registro de cliente" ON public.client_records FOR ALL USING (profile_id = public.my_profile_id());
 
 -- Appointments
 CREATE POLICY "Usuário vê próprios agendamentos" ON public.appointments FOR SELECT USING (client_id = public.my_profile_id());
@@ -558,6 +562,20 @@ CREATE POLICY "Membros da loja veem agendamentos da loja" ON public.appointments
 CREATE POLICY "Clientes inserem agendamento próprio" ON public.appointments FOR INSERT WITH CHECK (client_id = public.my_profile_id());
 CREATE POLICY "Dono/Admin agenda na loja" ON public.appointments FOR INSERT WITH CHECK (public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin'));
 CREATE POLICY "Cancelamento ou conclusão de agendamentos" ON public.appointments FOR UPDATE USING (client_id = public.my_profile_id() OR public.is_shop_member(shop_id, 'owner') OR public.is_shop_member(shop_id, 'admin') OR public.is_shop_member(shop_id, 'barber'));
+
+-- Notifications
+CREATE POLICY "Usuário vê próprias notificações" ON public.notifications FOR SELECT USING (profile_id = public.my_profile_id());
+CREATE POLICY "Autenticados inserem notificações" ON public.notifications FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Usuário atualiza próprias notificações" ON public.notifications FOR UPDATE USING (profile_id = public.my_profile_id());
+
+-- Storage/Bucket 'uploads'
+-- 0. Garantir a existência do bucket 'uploads' público
+INSERT INTO storage.buckets (id, name, public) VALUES ('uploads', 'uploads', true) ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "Autenticados fazem upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'uploads');
+CREATE POLICY "Leitura pública dos uploads" ON storage.objects FOR SELECT USING (bucket_id = 'uploads');
+CREATE POLICY "Dono pode deletar upload" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'uploads' AND auth.uid()::text = (storage.foldername(name))[1]);
+CREATE POLICY "Dono pode atualizar upload" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'uploads' AND auth.uid()::text = (storage.foldername(name))[1]);
 
 -- ======================================================
 -- SEEDS INICIAIS (DADOS INICIAIS)

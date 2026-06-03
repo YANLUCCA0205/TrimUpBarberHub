@@ -30,8 +30,27 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await db.auth.register({ email, password, full_name: email.split("@")[0] });
-      setShowOtp(true);
+      const result = await db.auth.register({ email, password, full_name: email.split("@")[0] });
+      if (result?.session) {
+        // Email confirmation is disabled, log in immediately
+        if (result.session.access_token) {
+          db.auth.setToken(result.session.access_token);
+        }
+        // Ensure a Client record exists for this user
+        const existing = await db.entities.Client.filter({ email });
+        if (existing.length === 0) {
+          await db.entities.Client.create({
+            name: email.split("@")[0],
+            email,
+            total_visits: 0,
+            total_spent: 0,
+          });
+        }
+        window.location.href = "/";
+      } else {
+        // Email confirmation is enabled, show OTP verification screen
+        setShowOtp(true);
+      }
     } catch (err) {
       setError(err.message || "Falha no cadastro");
     } finally {

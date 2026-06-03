@@ -92,12 +92,24 @@ export const AuthProvider = ({ children }) => {
     return 'user';
   };
 
+  const getSimulation = () => {
+    try {
+      const s = localStorage.getItem("trimup_sim");
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const sim = getSimulation();
+  const effectiveRoles = sim?.active ? [sim.role] : roles;
+
   const user = session?.user
     ? {
         ...session.user,
         ...profile,
-        role: getPrimaryRole(roles),
-        roles // export full roles array too
+        role: getPrimaryRole(effectiveRoles),
+        roles: effectiveRoles // export full roles array too
       }
     : null;
 
@@ -105,7 +117,7 @@ export const AuthProvider = ({ children }) => {
     session,
     user,
     profile,
-    roles,
+    roles: effectiveRoles,
     isAuthenticated: !!session,
     isLoadingAuth: loading,
     isLoadingPublicSettings: false, // satisfies App.jsx

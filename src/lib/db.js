@@ -284,6 +284,14 @@ export const db = {
       if (error) throw error;
       return data;
     },
+    resendOtp: async (email) => {
+      const { data, error } = await supabase.auth.resend({
+        type: 'signup',
+        email
+      });
+      if (error) throw error;
+      return data;
+    },
     loginWithProvider: async (provider, redirectUrl) => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,

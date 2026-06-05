@@ -46,7 +46,7 @@ export default function Profile() {
   const [userShops, setUserShops] = useState([]);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [cpfInput, setCpfInput] = useState("");
-  const [cpfSaving, setCpfSaving] = useState(false);
+  const [cpfSaved, setCpfSaved] = useState(false);
   const [barberHistory, setBarberHistory] = useState([]);
 
   useEffect(() => {
@@ -98,6 +98,7 @@ export default function Profile() {
         const { data: profileData } = await supabase.from('profiles').select('cpf_last4, lgpd_consent').eq('id', user.id).single();
         if (profileData?.cpf_last4) {
           setCpfInput('***.***.*' + profileData.cpf_last4.slice(0, 1) + '*-' + profileData.cpf_last4.slice(-2));
+          setCpfSaved(true);
         }
       } catch (err) {
         console.error('Error loading CPF info:', err);
@@ -150,16 +151,58 @@ export default function Profile() {
   }, [user]);
 
   async function saveProfile() {
+    // Validate CPF if it was changed (not masked)
+    const cpfCleaned = cpfInput.replace(/\D/g, '');
+    const cpfIsNew = cpfCleaned.length === 11; // Only validate if user typed a full CPF (not masked)
+    const isBarber = !!barberProfile;
+
+    if (isBarber && !cpfSaved && !cpfIsNew) {
+      toast.error("Como barbeiro, o CPF é obrigatório. Preencha seu CPF para salvar.");
+      return;
+    }
+
+    if (cpfIsNew && !validateCPF(cpfCleaned)) {
+      toast.error("CPF inválido. Verifique o número informado.");
+      return;
+    }
+
     setSaving(true);
     try {
       const updated = await db.entities.Client.update(client.id, form);
       setClient(updated);
       setForm(updated);
-      // Sync to profiles table
-      await supabase.from('profiles').update({
+
+      // Build profile update payload
+      const profileUpdate = {
         full_name: form.name,
         phone: form.phone
-      }).eq('id', user.id);
+      };
+
+      // Save CPF if user typed a new one
+      if (cpfIsNew) {
+        const hash = await hashDocument(cpfCleaned);
+        const last4 = getLast4Digits(cpfCleaned);
+        profileUpdate.cpf_hash = hash;
+        profileUpdate.cpf_last4 = last4;
+        profileUpdate.lgpd_consent = true;
+        profileUpdate.lgpd_consent_date = new Date().toISOString();
+      }
+
+      const { error } = await supabase.from('profiles').update(profileUpdate).eq('id', user.id);
+      if (error) {
+        if (error.message?.includes('unique') || error.message?.includes('duplicate') || error.code === '23505') {
+          toast.error("Este CPF já está vinculado a outra conta.");
+          return;
+        }
+        throw error;
+      }
+
+      if (cpfIsNew) {
+        const last4 = getLast4Digits(cpfCleaned);
+        setCpfInput('***.***.*' + last4.slice(0, 1) + '*-' + last4.slice(-2));
+        setCpfSaved(true);
+      }
+
       setEditing(false);
       toast.success("Perfil atualizado!");
     } catch (err) {
@@ -167,40 +210,6 @@ export default function Profile() {
       toast.error("Erro ao salvar perfil");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function saveCPF() {
-    const cleaned = cpfInput.replace(/\D/g, '');
-    if (!validateCPF(cleaned)) {
-      toast.error("CPF inválido. Verifique o número informado.");
-      return;
-    }
-    setCpfSaving(true);
-    try {
-      const hash = await hashDocument(cleaned);
-      const last4 = getLast4Digits(cleaned);
-      const { error } = await supabase.from('profiles').update({
-        cpf_hash: hash,
-        cpf_last4: last4,
-        lgpd_consent: true,
-        lgpd_consent_date: new Date().toISOString()
-      }).eq('id', user.id);
-      if (error) {
-        if (error.message?.includes('unique') || error.message?.includes('duplicate') || error.code === '23505') {
-          toast.error("Este CPF já está vinculado a outra conta.");
-        } else {
-          throw error;
-        }
-        return;
-      }
-      toast.success("CPF salvo com segurança!");
-      setCpfInput('***.***.*' + last4.slice(0, 1) + '*-' + last4.slice(-2));
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao salvar CPF.");
-    } finally {
-      setCpfSaving(false);
     }
   }
 
@@ -516,24 +525,27 @@ export default function Profile() {
             <Textarea value={form.notes || ""} onChange={e => setF("notes", e.target.value)} disabled={!editing} rows={3} className="bg-muted/20 border-border/40 disabled:opacity-70 resize-none" placeholder="Ex: prefere corte degradê, alérgico a certos produtos..." />
           </div>
 
-          <div className="mt-4 p-4 rounded-xl bg-primary/5 border border-primary/20">
+          {/* CPF Field */}
+          <div className={`mt-4 p-4 rounded-xl border ${barberProfile && !cpfSaved ? 'bg-red-500/5 border-red-500/30' : 'bg-primary/5 border-primary/20'}`}>
             <div className="flex items-center gap-2 mb-2">
               <Shield className="w-4 h-4 text-primary" />
-              <Label className="text-xs font-semibold text-primary">CPF (protegido por LGPD)</Label>
+              <Label className={`text-xs font-semibold ${barberProfile && !cpfSaved ? 'text-red-400' : 'text-primary'}`}>
+                CPF {barberProfile ? '(obrigatório para barbeiros)' : '(opcional)'}
+              </Label>
             </div>
-            <p className="text-[10px] text-muted-foreground mb-3">Seu CPF é armazenado de forma segura (hash SHA-256). Apenas os últimos dígitos ficam visíveis. Usado para prevenir duplicidade de contas.</p>
-            <div className="flex gap-2">
-              <Input
-                value={cpfInput}
-                onChange={e => setCpfInput(formatCPF(e.target.value))}
-                placeholder="000.000.000-00"
-                maxLength={14}
-                className="bg-muted/20 border-border/40 text-sm font-mono"
-              />
-              <Button onClick={saveCPF} disabled={cpfSaving} size="sm" className="bg-primary text-primary-foreground rounded-lg whitespace-nowrap">
-                {cpfSaving ? "Salvando..." : "Salvar CPF"}
-              </Button>
-            </div>
+            {barberProfile && !cpfSaved && (
+              <p className="text-[10px] text-red-400 mb-2 font-medium">⚠️ Barbeiros devem informar o CPF para fins de cadastro e prevenção de duplicidade.</p>
+            )}
+            <p className="text-[10px] text-muted-foreground mb-3">Armazenado de forma segura (hash SHA-256). Apenas os últimos dígitos ficam visíveis.</p>
+            <Input
+              value={cpfInput}
+              onChange={e => setCpfInput(formatCPF(e.target.value))}
+              disabled={!editing || cpfSaved}
+              placeholder="000.000.000-00"
+              maxLength={14}
+              className="bg-muted/20 border-border/40 text-sm font-mono disabled:opacity-70"
+            />
+            {cpfSaved && <p className="text-[10px] text-emerald-400 mt-2">✅ CPF verificado e salvo com segurança.</p>}
           </div>
 
           {editing && (

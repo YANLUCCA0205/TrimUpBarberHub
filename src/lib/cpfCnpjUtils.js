@@ -131,13 +131,7 @@ export async function hashDocument(doc) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Retorna máscara de exibição do documento
- * CPF: ***.***. ***-34
- * CNPJ: **.***.***/****-56
- * @param {string} doc - CPF ou CNPJ
- * @returns {string}
- */
+// Retorna máscara de exibição do documento (CPF ou CNPJ)
 export function maskDocument(doc) {
   if (!doc) return '';
   const cleaned = doc.replace(/\D/g, '');

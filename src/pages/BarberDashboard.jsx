@@ -142,31 +142,31 @@ export default function BarberDashboard() {
         return;
       }
 
-      // Check duplicates
-      const duplicate = shopClients.find(c =>
-        (trimmedEmail && c.email?.toLowerCase() === trimmedEmail) ||
-        (trimmedPhone && c.phone === trimmedPhone) ||
-        (c.name?.toLowerCase() === trimmedName.toLowerCase())
-      );
-
-      if (duplicate) {
-        toast.error("Cliente já cadastrado com estes dados!");
-        setSelectedClient(duplicate);
-        setClientSearch(duplicate.name);
-        setIsNewClient(false);
-        return;
-      }
-
+      // Check for existing client with same email or phone
       setSavingAppt(true);
       try {
-        clientRecord = await db.entities.Client.create({
-          shop_id: barber.shop_id,
-          name: trimmedName,
-          email: trimmedEmail || null,
-          phone: trimmedPhone || null,
-          source: 'manual'
-        });
-        setShopClients(prev => [...prev, clientRecord]);
+        if (trimmedEmail || trimmedPhone) {
+          const existingClients = await db.entities.Client.filter({ shop_id: barber.shop_id });
+          const duplicate = existingClients.find(c => 
+            (trimmedEmail && c.email?.toLowerCase() === trimmedEmail.toLowerCase()) ||
+            (trimmedPhone && c.phone === trimmedPhone)
+          );
+          if (duplicate) {
+            clientRecord = duplicate;
+            toast.info(`Cliente existente encontrado: ${duplicate.name}`);
+          }
+        }
+
+        if (!clientRecord) {
+          clientRecord = await db.entities.Client.create({
+            shop_id: barber.shop_id,
+            name: trimmedName,
+            email: trimmedEmail || null,
+            phone: trimmedPhone || null,
+            source: 'manual'
+          });
+          setShopClients(prev => [...prev, clientRecord]);
+        }
       } catch (err) {
         console.error("Error creating client record:", err);
         toast.error("Erro ao cadastrar cliente");

@@ -1,4 +1,5 @@
 import db from '@/lib/db';
+import { validateCPF, validateCNPJ, formatCPF, formatCNPJ, hashDocument, getLast4Digits } from '@/lib/cpfCnpjUtils';
 import { supabase } from "@/lib/supabase";
 
 import { useAuth } from "@/lib/AuthContext";
@@ -6,7 +7,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 
 import ImageUpload from '../components/ImageUpload';
-import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2 } from "lucide-react";
+import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,11 +40,14 @@ export default function Profile() {
   const [availableShops, setAvailableShops] = useState([]);
   const [selectedShopId, setSelectedShopId] = useState("");
   const [barberForm, setBarberForm] = useState({ name: "", bio: "", specialties: "" });
-  const [shopForm, setShopForm] = useState({ name: "", address: "", phone: "", startTime: "08:00", endTime: "19:00" });
+  const [shopForm, setShopForm] = useState({ name: "", address: "", phone: "", cnpj: "", startTime: "08:00", endTime: "19:00" });
   const [barberLoading, setBarberLoading] = useState(false);
   const [shopLoading, setShopLoading] = useState(false);
   const [userShops, setUserShops] = useState([]);
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [cpfInput, setCpfInput] = useState("");
+  const [cpfSaving, setCpfSaving] = useState(false);
+  const [barberHistory, setBarberHistory] = useState([]);
 
   useEffect(() => {
     if (!user) return;
@@ -80,7 +84,26 @@ export default function Profile() {
         console.error("Error loading or creating client record:", err);
       }
 
-      // 3. Load barber profile if exists
+      // 3. Load shops list
+      let shopsData = [];
+      try {
+        shopsData = await db.entities.Shop.list();
+        setAvailableShops(shopsData);
+      } catch (err) {
+        console.error("Error loading available shops:", err);
+      }
+
+      // Load CPF info from profiles table
+      try {
+        const { data: profileData } = await supabase.from('profiles').select('cpf_last4, lgpd_consent').eq('id', user.id).single();
+        if (profileData?.cpf_last4) {
+          setCpfInput('***.***.*' + profileData.cpf_last4.slice(0, 1) + '*-' + profileData.cpf_last4.slice(-2));
+        }
+      } catch (err) {
+        console.error('Error loading CPF info:', err);
+      }
+
+      // 4. Load barber profile if exists
       try {
         const barbers = await db.entities.Barber.filter({ profile_id: user.id });
         if (barbers.length > 0) {
@@ -95,19 +118,22 @@ export default function Profile() {
           if (reqs.length > 0) {
             setLinkRequest(reqs[0]);
           }
+          // Load barber link history
+          try {
+            const history = await db.entities.BarberLinkHistory.filter({ profile_id: user.id });
+            const enriched = history.map(h => {
+              const shop = shopsData.find(s => s.id === h.shop_id);
+              return { ...h, shop_name: shop?.name || 'Barbearia desconhecida' };
+            });
+            setBarberHistory(enriched);
+          } catch (err) {
+            console.error('Error loading barber history:', err);
+          }
         } else {
           setBarberForm({ name: user.full_name || "", bio: "", specialties: "" });
         }
       } catch (err) {
         console.error("Error loading barber profile:", err);
-      }
-
-      // 4. Load shops list
-      try {
-        const shopsData = await db.entities.Shop.list();
-        setAvailableShops(shopsData);
-      } catch (err) {
-        console.error("Error loading available shops:", err);
       }
 
       // 5. Load user's own shops
@@ -141,6 +167,40 @@ export default function Profile() {
       toast.error("Erro ao salvar perfil");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveCPF() {
+    const cleaned = cpfInput.replace(/\D/g, '');
+    if (!validateCPF(cleaned)) {
+      toast.error("CPF inválido. Verifique o número informado.");
+      return;
+    }
+    setCpfSaving(true);
+    try {
+      const hash = await hashDocument(cleaned);
+      const last4 = getLast4Digits(cleaned);
+      const { error } = await supabase.from('profiles').update({
+        cpf_hash: hash,
+        cpf_last4: last4,
+        lgpd_consent: true,
+        lgpd_consent_date: new Date().toISOString()
+      }).eq('id', user.id);
+      if (error) {
+        if (error.message?.includes('unique') || error.message?.includes('duplicate') || error.code === '23505') {
+          toast.error("Este CPF já está vinculado a outra conta.");
+        } else {
+          throw error;
+        }
+        return;
+      }
+      toast.success("CPF salvo com segurança!");
+      setCpfInput('***.***.*' + last4.slice(0, 1) + '*-' + last4.slice(-2));
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao salvar CPF.");
+    } finally {
+      setCpfSaving(false);
     }
   }
 
@@ -233,6 +293,25 @@ export default function Profile() {
       toast.error("Por favor, preencha todos os campos obrigatórios.");
       return;
     }
+    // Verificar se já possui barbearia
+    if (userShops.length > 0) {
+      toast.error("Você já possui uma barbearia cadastrada. Apenas uma por conta.");
+      return;
+    }
+    // Validar CNPJ/CPF (se informado)
+    if (shopForm.cnpj) {
+      const cleanedDoc = shopForm.cnpj.replace(/\D/g, '');
+      if (cleanedDoc.length === 14 && !validateCNPJ(cleanedDoc)) {
+        toast.error("CNPJ inválido. Verifique o número informado.");
+        return;
+      } else if (cleanedDoc.length === 11 && !validateCPF(cleanedDoc)) {
+        toast.error("CPF inválido. Verifique o número informado.");
+        return;
+      } else if (cleanedDoc.length > 0 && cleanedDoc.length !== 11 && cleanedDoc.length !== 14) {
+        toast.error("Informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido.");
+        return;
+      }
+    }
     setShopLoading(true);
     try {
       const slug = shopForm.name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now().toString().slice(-4);
@@ -246,6 +325,15 @@ export default function Profile() {
         sunday: { start: shopForm.startTime, end: shopForm.endTime, active: false }
       };
 
+      let cnpjData = {};
+      if (shopForm.cnpj) {
+        const cleanedDoc = shopForm.cnpj.replace(/\D/g, '');
+        cnpjData = {
+          cnpj_hash: await hashDocument(cleanedDoc),
+          cnpj_last4: getLast4Digits(cleanedDoc)
+        };
+      }
+
       await db.entities.Shop.create({
         owner_id: user.id,
         owner_email: user.email,
@@ -254,7 +342,8 @@ export default function Profile() {
         phone: shopForm.phone,
         slug: slug,
         working_hours: workingHours,
-        is_active: true
+        is_active: true,
+        ...cnpjData
       });
 
       toast.success("Barbearia criada! Você agora é administrador.");
@@ -336,7 +425,7 @@ export default function Profile() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-muted rounded-xl mb-6">
-        {[["historico", "Histórico"], ["perfil", "Meus dados"], ["endereco", "Endereço"], ["equipe", "Junte-se à equipe"]].map(([k, l]) => (
+        {[["historico", "Histórico"], ["perfil", "Meus dados"], ["endereco", "Endereço"], ["equipe", "Junte-se à equipe"], ...(barberProfile ? [["carreira", "Carreira"]] : [])].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${tab === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
             {l}
@@ -425,6 +514,26 @@ export default function Profile() {
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Observações / preferências</Label>
             <Textarea value={form.notes || ""} onChange={e => setF("notes", e.target.value)} disabled={!editing} rows={3} className="bg-muted/20 border-border/40 disabled:opacity-70 resize-none" placeholder="Ex: prefere corte degradê, alérgico a certos produtos..." />
+          </div>
+
+          <div className="mt-4 p-4 rounded-xl bg-primary/5 border border-primary/20">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield className="w-4 h-4 text-primary" />
+              <Label className="text-xs font-semibold text-primary">CPF (protegido por LGPD)</Label>
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-3">Seu CPF é armazenado de forma segura (hash SHA-256). Apenas os últimos dígitos ficam visíveis. Usado para prevenir duplicidade de contas.</p>
+            <div className="flex gap-2">
+              <Input
+                value={cpfInput}
+                onChange={e => setCpfInput(formatCPF(e.target.value))}
+                placeholder="000.000.000-00"
+                maxLength={14}
+                className="bg-muted/20 border-border/40 text-sm font-mono"
+              />
+              <Button onClick={saveCPF} disabled={cpfSaving} size="sm" className="bg-primary text-primary-foreground rounded-lg whitespace-nowrap">
+                {cpfSaving ? "Salvando..." : "Salvar CPF"}
+              </Button>
+            </div>
           </div>
 
           {editing && (
@@ -628,6 +737,14 @@ export default function Profile() {
                     <Label className="text-xs text-muted-foreground mb-1 block">Telefone Comercial</Label>
                     <Input value={shopForm.phone} onChange={e => setShopForm({ ...shopForm, phone: e.target.value })} required placeholder="(11) 99999-9999" className="h-9 text-xs" />
                   </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">CNPJ ou CPF do Responsável</Label>
+                    <Input value={shopForm.cnpj} onChange={e => {
+                      const v = e.target.value.replace(/\D/g, '');
+                      setShopForm({ ...shopForm, cnpj: v.length <= 11 ? formatCPF(v) : formatCNPJ(v) });
+                    }} placeholder="00.000.000/0000-00" className="h-9 text-xs font-mono" maxLength={18} />
+                    <p className="text-[10px] text-muted-foreground mt-1">Opcional. Previne duplicidade. Aceita CPF para MEI.</p>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1 block">Abre às</Label>
@@ -646,6 +763,62 @@ export default function Profile() {
             </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Tab: Carreira */}
+      {tab === "carreira" && barberProfile && (
+        <div className="space-y-4">
+          <div className="bg-card border border-border/50 p-5 rounded-2xl">
+            <h3 className="font-bold text-base mb-1">Histórico Profissional</h3>
+            <p className="text-xs text-muted-foreground">Barbearias por onde você passou e seu status de vínculo.</p>
+          </div>
+
+          {barberProfile.shop_id && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                  <span className="text-lg">🏠</span>
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm">{availableShops.find(s => s.id === barberProfile.shop_id)?.name || 'Barbearia atual'}</p>
+                  <p className="text-[10px] text-emerald-400">✅ Vinculado atualmente</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {barberHistory.length > 0 ? (
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Histórico de vínculos</h4>
+              {barberHistory
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .map(h => (
+                <div key={h.id} className="flex items-start gap-3 p-4 rounded-xl bg-card border border-border/50">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${h.action === 'accepted' ? 'bg-blue-500/20' : 'bg-red-500/20'}`}>
+                    <span className="text-lg">{h.action === 'accepted' ? '🤝' : '👋'}</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{h.shop_name}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {h.action === 'accepted' ? 'Vinculado' : h.action === 'unlinked' ? 'Desvinculado' : h.action === 'rejected' ? 'Rejeitado' : h.action}
+                      {' • '}
+                      {new Date(h.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
+                    {h.notes && <p className="text-[10px] text-muted-foreground/70 mt-1 italic">{h.notes}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            !barberProfile.shop_id && (
+              <div className="text-center py-12 text-muted-foreground rounded-2xl bg-card/50 border border-border/50">
+                <Calendar className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">Nenhum histórico profissional ainda.</p>
+                <p className="text-xs mt-1">Vincule-se a uma barbearia para começar!</p>
+              </div>
+            )
+          )}
         </div>
       )}
 

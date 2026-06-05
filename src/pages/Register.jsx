@@ -20,6 +20,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
+  const [lgpdConsent, setLgpdConsent] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -245,7 +246,22 @@ export default function Register() {
             />
           </div>
         </div>
-        <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
+        <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            id="lgpd-consent"
+            checked={lgpdConsent}
+            onChange={(e) => setLgpdConsent(e.target.checked)}
+            className="mt-1 rounded border-border"
+            required
+          />
+          <label htmlFor="lgpd-consent" className="text-xs text-muted-foreground leading-relaxed">
+            Li e aceito os{" "}
+            <a href="/privacy" target="_blank" className="text-primary hover:underline font-medium">Termos de Uso e Política de Privacidade</a>.
+            Autorizo o tratamento dos meus dados conforme a LGPD (Lei 13.709/2018).
+          </label>
+        </div>
+        <Button type="submit" className="w-full h-12 font-medium" disabled={loading || !lgpdConsent}>
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />

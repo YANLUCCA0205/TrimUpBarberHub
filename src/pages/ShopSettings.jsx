@@ -128,17 +128,33 @@ export default function ShopSettings() {
 
   // Barber CRUD
   async function saveBarber() {
-    if (!barberForm.name) return;
-    if (editingBarber) {
-      const updated = await db.entities.Barber.update(editingBarber.id, barberForm);
-      setBarbers(barbers.map(b => b.id === editingBarber.id ? updated : b));
-    } else {
-      const created = await db.entities.Barber.create({ ...barberForm, shop_id: shop.id, owner_email: user.email });
-      setBarbers([...barbers, created]);
+    if (!barberForm.name) {
+      toast.error("Informe o nome do barbeiro.");
+      return;
     }
-    setShowBarberForm(false);
-    setEditingBarber(null);
-    setBarberForm({});
+    try {
+      if (editingBarber) {
+        const updated = await db.entities.Barber.update(editingBarber.id, barberForm);
+        setBarbers(barbers.map(b => b.id === editingBarber.id ? updated : b));
+        toast.success("Barbeiro atualizado!");
+      } else {
+        // Check for duplicate barber name in this shop
+        const duplicate = barbers.find(b => b.name.toLowerCase().trim() === barberForm.name.toLowerCase().trim());
+        if (duplicate) {
+          toast.error(`Já existe um barbeiro chamado "${duplicate.name}" nesta barbearia.`);
+          return;
+        }
+        const created = await db.entities.Barber.create({ ...barberForm, shop_id: shop.id, owner_email: user.email });
+        setBarbers([...barbers, created]);
+        toast.success("Barbeiro adicionado!");
+      }
+      setShowBarberForm(false);
+      setEditingBarber(null);
+      setBarberForm({});
+    } catch (err) {
+      console.error("Erro ao salvar barbeiro:", err);
+      toast.error("Erro ao salvar barbeiro: " + (err.message || "tente novamente."));
+    }
   }
 
   async function deleteBarber(id) {
@@ -177,20 +193,34 @@ export default function ShopSettings() {
     }
   }
 
-  async function handleAcceptRequest(reqId) {
+  async function handleAcceptRequest(req) {
     try {
-      await db.entities.BarberLinkRequest.update(reqId, { status: "accepted" });
-      toast.success("Solicitação de vínculo aprovada!");
-      
-      // Recarregar os barbeiros
-      if (shop) {
-        const b = await db.entities.Barber.filter({ shop_id: shop.id });
-        setBarbers(b);
+      const requestingBarber = barbers.find(b => b.id === req.barber_id);
+      const existingManual = barbers.find(b =>
+        b.id !== req.barber_id &&
+        !b.profile_id &&
+        b.name.toLowerCase().trim() === requestingBarber?.name?.toLowerCase()?.trim()
+      );
+
+      if (existingManual) {
+        await db.entities.Barber.update(existingManual.id, {
+          profile_id: req.profile_id,
+          shop_id: shop.id
+        });
+        try { await db.entities.Barber.delete(req.barber_id); } catch (e) { console.warn('Could not delete duplicate barber:', e); }
+        toast.success(`Barbeiro "${existingManual.name}" vinculado ao perfil do solicitante (merge automático).`);
       }
-      setLinkRequests(prev => prev.filter(r => r.id !== reqId));
+
+      await db.entities.BarberLinkRequest.update(req.id, { status: 'accepted' });
+      setLinkRequests(prev => prev.filter(r => r.id !== req.id));
+
+      const updatedBarbers = await db.entities.Barber.filter({ shop_id: shop.id });
+      setBarbers(updatedBarbers);
+
+      if (!existingManual) toast.success("Solicitação aceita!");
     } catch (err) {
       console.error(err);
-      toast.error("Erro ao aprovar solicitação.");
+      toast.error("Erro ao aceitar solicitação.");
     }
   }
 
@@ -418,7 +448,7 @@ export default function ShopSettings() {
                       <Button size="sm" variant="ghost" onClick={() => handleRejectRequest(r.id)} className="h-8 text-xs text-muted-foreground hover:text-destructive">
                         Rejeitar
                       </Button>
-                      <Button size="sm" onClick={() => handleAcceptRequest(r.id)} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg">
+                      <Button size="sm" onClick={() => handleAcceptRequest(r)} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg">
                         Aceitar
                       </Button>
                     </div>

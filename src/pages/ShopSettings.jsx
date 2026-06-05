@@ -225,7 +225,7 @@ export default function ShopSettings() {
       return;
     }
     try {
-      const data = { ...serviceForm, price: priceNum, duration_minutes: parseInt(serviceForm.duration_minutes) || 30 };
+      const data = { ...serviceForm, price: priceNum, duration_minutes: parseInt(serviceForm.duration_minutes) || 30, shop_id: shop?.id };
       if (editingService) {
         const updated = await db.entities.Service.update(editingService.id, data);
         setServices(services.map(s => s.id === editingService.id ? updated : s));

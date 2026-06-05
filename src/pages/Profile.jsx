@@ -517,16 +517,6 @@ export default function Profile() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* CARD 1: TORNAR-SE BARBEIRO */}
-            {userShops.length > 0 ? (
-              <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
-                <div>
-                  <h4 className="font-bold text-base mb-1">Quero ser Barbeiro</h4>
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-xs mt-3">
-                    Donos de barbearia não podem se cadastrar como barbeiro em outro local.
-                  </div>
-                </div>
-              </div>
-            ) : (
             <div className="bg-card border border-border/50 p-5 rounded-2xl flex flex-col justify-between">
               <div>
                 <h4 className="font-bold text-base mb-1">Quero ser Barbeiro</h4>
@@ -608,7 +598,6 @@ export default function Profile() {
                 )}
               </div>
             </div>
-            )}
 
             {/* CARD 2: TORNAR-SE ADMIN (CRIAR BARBEARIA) */}
             {barberProfile && barberProfile.shop_id ? (

@@ -400,14 +400,23 @@ export default function Booking() {
                 {timeSlots.map(t => {
                   const isPast = selectedDate === today && t <= nowTime;
                   const isTaken = takenSlots.includes(t);
-                  const disabled = isPast || isTaken;
+                  const isDisabledStyle = isPast || isTaken;
                   return (
                     <button key={t}
-                      onClick={() => !disabled && setSelectedTime(t)}
-                      disabled={disabled}
+                      onClick={() => {
+                        if (isPast) {
+                          toast.error("Não é possível agendar: este horário já passou!");
+                          return;
+                        }
+                        if (isTaken) {
+                          toast.error("Não é possível agendar: este horário já foi reservado!");
+                          return;
+                        }
+                        setSelectedTime(t);
+                      }}
                       title={isTaken ? "Horário ocupado" : isPast ? "Horário passado" : ""}
                       className={`py-2.5 rounded-xl text-sm font-medium transition-all relative ${
-                        disabled
+                        isDisabledStyle
                           ? "bg-muted/20 text-muted-foreground/30 cursor-not-allowed"
                           : selectedTime === t
                           ? "bg-primary text-primary-foreground"

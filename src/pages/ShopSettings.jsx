@@ -213,19 +213,39 @@ export default function ShopSettings() {
 
   // Service CRUD
   async function saveService() {
-    if (!serviceForm.name || !serviceForm.price) return;
-    const data = { ...serviceForm, price: parseFloat(serviceForm.price), duration_minutes: parseInt(serviceForm.duration_minutes) };
-    if (editingService) {
-      const updated = await db.entities.Service.update(editingService.id, data);
-      setServices(services.map(s => s.id === editingService.id ? updated : s));
-    } else {
-      if (!serviceForm.barber_id) return;
-      const created = await db.entities.Service.create(data);
-      setServices([...services, created]);
+    if (!serviceForm.name || !serviceForm.price) {
+      toast.error("Preencha o nome e o preço do serviço.");
+      return;
     }
-    setShowServiceForm(false);
-    setEditingService(null);
-    setServiceForm({ duration_minutes: "30", category: "corte", is_active: true });
+    // Handle Brazilian price format (comma as decimal separator)
+    const priceStr = String(serviceForm.price).replace(",", ".");
+    const priceNum = parseFloat(priceStr);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast.error("Informe um preço válido (ex: 67.00).");
+      return;
+    }
+    try {
+      const data = { ...serviceForm, price: priceNum, duration_minutes: parseInt(serviceForm.duration_minutes) || 30 };
+      if (editingService) {
+        const updated = await db.entities.Service.update(editingService.id, data);
+        setServices(services.map(s => s.id === editingService.id ? updated : s));
+        toast.success("Serviço atualizado!");
+      } else {
+        if (!serviceForm.barber_id) {
+          toast.error("Selecione o barbeiro para este serviço.");
+          return;
+        }
+        const created = await db.entities.Service.create(data);
+        setServices([...services, created]);
+        toast.success("Serviço criado com sucesso!");
+      }
+      setShowServiceForm(false);
+      setEditingService(null);
+      setServiceForm({ duration_minutes: "30", category: "corte", is_active: true });
+    } catch (err) {
+      console.error("Erro ao salvar serviço:", err);
+      toast.error("Erro ao salvar serviço: " + (err.message || "tente novamente."));
+    }
   }
 
   async function deleteService(id) {

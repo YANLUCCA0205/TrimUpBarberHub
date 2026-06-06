@@ -1,6 +1,6 @@
-import db from '@/lib/db';
-
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEntityQuery, useEntityMutation } from "@/hooks/useSupabaseQuery";
 
 import { useAuth } from "@/lib/AuthContext";
 import { Plus, ChevronLeft, ChevronRight, Check, X, Edit2, Clock } from "lucide-react";
@@ -167,46 +167,56 @@ function DayView({ filteredAppts, openEdit, updateStatus, openNew }) {
 
 export default function Agenda() {
   const { user } = useAuth();
-  const [shop, setShop] = useState(null);
-  const [barbers, setBarbers] = useState([]);
-  const [appointments, setAppointments] = useState([]);
-  const [barberServices, setBarberServices] = useState([]);
+  const queryClient = useQueryClient();
+
   const [clientSuggestions, setClientSuggestions] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedBarber, setSelectedBarber] = useState("all");
   const [viewMode, setViewMode] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingAppt, setEditingAppt] = useState(null);
   const [form, setForm] = useState(/** @type {any} */ ({ status: "agendado" }));
 
-  useEffect(() => {
-    if (!user) return;
-    async function load() {
-      const shops = await db.entities.Shop.filter({ owner_email: user.email });
-      if (shops.length === 0) { setLoading(false); return; }
-      const s = shops[0];
-      setShop(s);
-      const b = await db.entities.Barber.filter({ shop_id: s.id });
-      setBarbers(b);
-      if (b.length > 0) {
-        const allAppts = [];
-        for (const barber of b) {
-          const a = await db.entities.Appointment.filter({ barber_id: barber.id }, "-date", 200);
-          allAppts.push(...a);
-        }
-        setAppointments(allAppts);
-      }
-      setLoading(false);
-    }
-    load();
-  }, [user]);
+  // React Query Queries
+  const { data: shops = [], isLoading: loadingShops } = useEntityQuery(
+    'Shop',
+    { owner_email: user?.email },
+    { enabled: !!user?.email }
+  );
+  const shop = shops[0] || null;
 
-  async function loadBarberServices(barberId) {
-    if (!barberId) { setBarberServices([]); return; }
-    const svcs = await db.entities.Service.filter({ barber_id: barberId });
-    setBarberServices(svcs.filter(s => s.is_active !== false));
-  }
+  const { data: barbers = [], isLoading: loadingBarbers } = useEntityQuery(
+    'Barber',
+    { shop_id: shop?.id },
+    { enabled: !!shop?.id }
+  );
+
+  const barberIds = barbers.map(b => b.id);
+  const { data: appointments = [], isLoading: loadingAppointments } = useEntityQuery(
+    'Appointment',
+    { barber_id: barberIds },
+    { enabled: barberIds.length > 0, order: "-date", limit: 500 }
+  );
+
+  const { data: services = [] } = useEntityQuery(
+    'Service',
+    { barber_id: barberIds },
+    { enabled: barberIds.length > 0 }
+  );
+
+  const { data: clients = [] } = useEntityQuery(
+    'Client',
+    { shop_id: shop?.id },
+    { enabled: !!shop?.id }
+  );
+
+  const barberServices = services.filter(s => s.barber_id === form.barber_id && s.is_active !== false);
+
+  // React Query Mutations
+  const createMutation = useEntityMutation('Appointment', 'create');
+  const updateMutation = useEntityMutation('Appointment', 'update');
+
+  const loading = loadingShops || loadingBarbers || loadingAppointments;
 
   async function saveAppointment() {
     if (!shop) { toast.error('Barbearia não encontrada'); return; }
@@ -236,45 +246,51 @@ export default function Agenda() {
     }
     const barber = barbers.find(b => b.id === form.barber_id);
     const data = { ...form, barber_name: barber?.name, client_email: form.client_email || "", shop_id: shop.id };
-    if (editingAppt) {
-      const updated = await db.entities.Appointment.update(editingAppt.id, data);
-      setAppointments(appts => appts.map(a => a.id === editingAppt.id ? updated : a));
-      toast.success("Agendamento atualizado!");
-    } else {
-      const created = await db.entities.Appointment.create(data);
-      setAppointments(appts => [created, ...appts]);
-      toast.success("Agendamento criado!");
+    
+    try {
+      if (editingAppt) {
+        await updateMutation.mutateAsync({ id: editingAppt.id, data });
+        toast.success("Agendamento atualizado!");
+      } else {
+        await createMutation.mutateAsync(data);
+        toast.success("Agendamento criado!");
+      }
+      queryClient.invalidateQueries({ queryKey: ['Appointment'] });
+      setShowForm(false);
+      setEditingAppt(null);
+      setForm({ status: "agendado" });
+      setClientSuggestions([]);
+    } catch (err) {
+      toast.error("Erro ao salvar agendamento");
     }
-    setShowForm(false);
-    setEditingAppt(null);
-    setForm({ status: "agendado" });
-    setClientSuggestions([]);
   }
 
   async function updateStatus(id, status) {
-    await db.entities.Appointment.update(id, { status });
-    setAppointments(appts => appts.map(a => a.id === id ? { ...a, status } : a));
+    try {
+      await updateMutation.mutateAsync({ id, data: { status } });
+      queryClient.invalidateQueries({ queryKey: ['Appointment'] });
+      toast.success("Status atualizado!");
+    } catch (err) {
+      toast.error("Erro ao atualizar o status");
+    }
   }
 
   function openEdit(appt) {
     setEditingAppt(appt);
     setForm({ ...appt });
-    loadBarberServices(appt.barber_id);
     setShowForm(true);
   }
 
   function openNew() {
     setEditingAppt(null);
     setForm({ status: "agendado", date: selectedDate });
-    setBarberServices([]);
     setClientSuggestions([]);
     setShowForm(true);
   }
 
-  async function handleClientNameChange(val) {
+  function handleClientNameChange(val) {
     setForm(f => ({ ...f, client_name: val }));
     if (val.length < 2) { setClientSuggestions([]); return; }
-    const clients = await db.entities.Client.filter({});
     const lv = val.toLowerCase();
     const clientMatches = clients
       .filter(c => c.name?.toLowerCase().includes(lv) || c.phone?.includes(val) || c.email?.toLowerCase().includes(lv))
@@ -385,7 +401,7 @@ export default function Agenda() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Barbeiro *</Label>
-              <Select value={form.barber_id || ""} onValueChange={v => { setForm(f => ({ ...f, barber_id: v })); loadBarberServices(v); }}>
+              <Select value={form.barber_id || ""} onValueChange={v => setForm(f => ({ ...f, barber_id: v }))}>
                 <SelectTrigger className="bg-muted border-border/50 rounded-xl"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                 <SelectContent>{barbers.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
               </Select>

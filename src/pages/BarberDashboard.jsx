@@ -1,7 +1,8 @@
-import db from '@/lib/db';
 import { supabase } from "@/lib/supabase";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEntityQuery, useEntityMutation } from "@/hooks/useSupabaseQuery";
 
 import { useAuth } from "@/lib/AuthContext";
 import { DollarSign, Users, Calendar, Percent, Plus, Star, Settings } from "lucide-react";
@@ -38,15 +39,10 @@ function getWeeklyRevenue(appointments) {
 
 export default function BarberDashboard() {
   const { user } = useAuth();
-  const [barber, setBarber] = useState(null);
-  const [appointments, setAppointments] = useState([]);
-  const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
+
   const [showServiceDialog, setShowServiceDialog] = useState(false);
   const [newService, setNewService] = useState({ name: "", price: "", duration_minutes: "30", category: "corte", description: "" });
-  const [isAdmin, setIsAdmin] = useState(false);
 
-  const [shopClients, setShopClients] = useState([]);
   const [showApptDialog, setShowApptDialog] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
   const [clientSuggestions, setClientSuggestions] = useState([]);
@@ -59,50 +55,93 @@ export default function BarberDashboard() {
   const TIMES = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30",
     "13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00"];
 
-  useEffect(() => {
-    async function load() {
-      if (!user) return;
-      const barbers = await db.entities.Barber.filter({ profile_id: user.id });
-      if (barbers.length > 0) {
-        const currentBarber = barbers[0];
-        setBarber(currentBarber);
-        const [a, s, membershipRes, clientsRes] = await Promise.all([
-          db.entities.Appointment.filter({ barber_id: currentBarber.id }, "-date", 500),
-          db.entities.Service.filter({ barber_id: currentBarber.id }),
-          currentBarber.shop_id 
-            ? supabase.from('shop_memberships').select('role').eq('shop_id', currentBarber.shop_id).eq('profile_id', user.id).maybeSingle()
-            : Promise.resolve({ data: null }),
-          currentBarber.shop_id
-            ? db.entities.Client.filter({ shop_id: currentBarber.shop_id })
-            : Promise.resolve([])
-        ]);
-        setAppointments(a);
-        setServices(s);
-        setShopClients(clientsRes || []);
-        const isShopAdmin = membershipRes?.data?.role === 'owner' || membershipRes?.data?.role === 'admin' || user?.roles?.includes('siteowner');
-        setIsAdmin(isShopAdmin);
-      }
-      setLoading(false);
+  // Barber Query
+  const { data: barbers = [], isLoading: barbersLoading } = useEntityQuery(
+    'Barber',
+    user?.id ? { profile_id: user.id } : {},
+    { enabled: !!user?.id }
+  );
+  const barber = barbers[0] || null;
+
+  // Appointments Query
+  const { data: appointments = [], isLoading: appointmentsLoading } = useEntityQuery(
+    'Appointment',
+    barber?.id ? { barber_id: barber.id } : {},
+    {
+      enabled: !!barber?.id,
+      order: "-date",
+      limit: 500,
     }
-    load();
-  }, [user]);
+  );
+
+  // Services Query
+  const { data: services = [], isLoading: servicesLoading } = useEntityQuery(
+    'Service',
+    barber?.id ? { barber_id: barber.id } : {},
+    { enabled: !!barber?.id }
+  );
+
+  // Shop Clients Query
+  const { data: shopClients = [] } = useEntityQuery(
+    'Client',
+    barber?.shop_id ? { shop_id: barber.shop_id } : {},
+    { enabled: !!barber?.shop_id }
+  );
+
+  // Shop Membership / Admin role Query
+  const { data: membershipRes } = useQuery({
+    queryKey: ['shop_memberships', barber?.shop_id, user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('shop_memberships')
+        .select('role')
+        .eq('shop_id', barber.shop_id)
+        .eq('profile_id', user.id)
+        .maybeSingle();
+      return data || { role: null };
+    },
+    enabled: !!(barber?.shop_id && user?.id),
+  });
+
+  const isAdmin = membershipRes?.role === 'owner' || membershipRes?.role === 'admin' || user?.roles?.includes('siteowner');
+
+  const isLoading = barbersLoading || (!!barber && (appointmentsLoading || servicesLoading));
+
+  // Mutations
+  const createBarber = useEntityMutation('Barber', 'create');
+  const createService = useEntityMutation('Service', 'create');
+  const createClient = useEntityMutation('Client', 'create');
+  const createAppointment = useEntityMutation('Appointment', 'create');
 
   async function createBarberProfile() {
-    const b = await db.entities.Barber.create({ name: user.full_name || "Meu Perfil", owner_email: user.email, profile_id: user.id });
-    setBarber(b);
+    try {
+      await createBarber.mutateAsync({
+        name: user.full_name || "Meu Perfil",
+        owner_email: user.email,
+        profile_id: user.id
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao criar perfil de barbeiro");
+    }
   }
 
   async function addService() {
     if (!newService.name || !newService.price) return;
-    const s = await db.entities.Service.create({
-      ...newService,
-      price: parseFloat(newService.price),
-      duration_minutes: parseInt(newService.duration_minutes),
-      barber_id: barber.id,
-    });
-    setServices([...services, s]);
-    setNewService({ name: "", price: "", duration_minutes: "30", category: "corte", description: "" });
-    setShowServiceDialog(false);
+    try {
+      await createService.mutateAsync({
+        ...newService,
+        price: parseFloat(newService.price),
+        duration_minutes: parseInt(newService.duration_minutes),
+        barber_id: barber.id,
+      });
+      setNewService({ name: "", price: "", duration_minutes: "30", category: "corte", description: "" });
+      setShowServiceDialog(false);
+      toast.success("Serviço adicionado com sucesso!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao adicionar serviço");
+    }
   }
 
   const handleClientSearch = (val) => {
@@ -146,8 +185,7 @@ export default function BarberDashboard() {
       setSavingAppt(true);
       try {
         if (trimmedEmail || trimmedPhone) {
-          const existingClients = await db.entities.Client.filter({ shop_id: barber.shop_id });
-          const duplicate = existingClients.find(c => 
+          const duplicate = shopClients.find(c => 
             (trimmedEmail && c.email?.toLowerCase() === trimmedEmail.toLowerCase()) ||
             (trimmedPhone && c.phone === trimmedPhone)
           );
@@ -158,14 +196,13 @@ export default function BarberDashboard() {
         }
 
         if (!clientRecord) {
-          clientRecord = await db.entities.Client.create({
+          clientRecord = await createClient.mutateAsync({
             shop_id: barber.shop_id,
             name: trimmedName,
             email: trimmedEmail || null,
             phone: trimmedPhone || null,
             source: 'manual'
           });
-          setShopClients(prev => [...prev, clientRecord]);
         }
       } catch (err) {
         console.error("Error creating client record:", err);
@@ -217,8 +254,7 @@ export default function BarberDashboard() {
         status: "confirmado"
       };
 
-      const created = await db.entities.Appointment.create(apptData);
-      setAppointments(prev => [created, ...prev]);
+      await createAppointment.mutateAsync(apptData);
 
       if (clientRecord.profile_id) {
         try {
@@ -249,7 +285,7 @@ export default function BarberDashboard() {
     }
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -265,8 +301,8 @@ export default function BarberDashboard() {
         </div>
         <h2 className="text-2xl font-bold mb-3">Crie seu perfil de barbeiro</h2>
         <p className="text-muted-foreground mb-8">Configure seu perfil profissional e comece a receber agendamentos.</p>
-        <Button onClick={createBarberProfile} className="bg-primary text-primary-foreground rounded-xl px-8">
-          Criar perfil
+        <Button onClick={createBarberProfile} disabled={createBarber.isPending} className="bg-primary text-primary-foreground rounded-xl px-8">
+          {createBarber.isPending ? "Criando..." : "Criar perfil"}
         </Button>
       </div>
     );
@@ -565,7 +601,9 @@ export default function BarberDashboard() {
                   <Label>Descrição</Label>
                   <Textarea value={newService.description} onChange={e => setNewService({...newService, description: e.target.value})} className="bg-muted border-border/50 rounded-xl" />
                 </div>
-                <Button onClick={addService} className="w-full bg-primary text-primary-foreground rounded-xl">Salvar</Button>
+                <Button onClick={addService} disabled={createService.isPending} className="w-full bg-primary text-primary-foreground rounded-xl">
+                  {createService.isPending ? "Salvando..." : "Salvar"}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>

@@ -224,6 +224,18 @@ const createEntityHandler = (entityName) => {
   };
 };
 
+// Shared role hierarchy utility
+const getPrimaryRole = (rolesList) => {
+  if (!rolesList || rolesList.length === 0) return 'user';
+  if (rolesList.includes('siteowner')) return 'siteowner';
+  if (rolesList.includes('admin')) return 'admin';
+  if (rolesList.includes('barber')) return 'barber';
+  return 'user';
+};
+
+// Cache entity handlers to avoid re-creating on every proxy access
+const entityHandlerCache = {};
+
 export const db = {
   auth: {
     isAuthenticated: async () => {
@@ -241,14 +253,6 @@ export const db = {
         .maybeSingle();
 
       const roles = profile?.profile_roles?.map(r => r.role) || [];
-
-      const getPrimaryRole = (rolesList) => {
-        if (!rolesList || rolesList.length === 0) return 'user';
-        if (rolesList.includes('siteowner')) return 'siteowner';
-        if (rolesList.includes('admin')) return 'admin';
-        if (rolesList.includes('barber')) return 'barber';
-        return 'user';
-      };
 
       return {
         ...user,
@@ -292,6 +296,20 @@ export const db = {
       if (error) throw error;
       return data;
     },
+    resetPasswordRequest: async (email) => {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`
+      });
+      if (error) throw error;
+      return data;
+    },
+    resetPassword: async (newPassword) => {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      if (error) throw error;
+      return data;
+    },
     loginWithProvider: async (provider, redirectUrl) => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
@@ -318,9 +336,13 @@ export const db = {
    *   delete: (id: any) => Promise<boolean>
    * }>}
    */
-  entities: new Proxy({}, {
+  entities: new Proxy(entityHandlerCache, {
     get: (target, name) => {
-      return createEntityHandler(name);
+      if (typeof name !== 'string') return undefined;
+      if (!target[name]) {
+        target[name] = createEntityHandler(name);
+      }
+      return target[name];
     }
   }),
 

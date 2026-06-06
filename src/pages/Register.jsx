@@ -1,7 +1,7 @@
 import db from '@/lib/db';
 
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,14 +13,24 @@ import GoogleIcon from "@/components/GoogleIcon";
 import { toast } from "@/components/ui/use-toast";
 
 export default function Register() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [lgpdConsent, setLgpdConsent] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,23 +41,20 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      const result = await db.auth.register({ email, password, full_name: email.split("@")[0] });
+      const result = await db.auth.register({ email, password, full_name: fullName });
       if (result?.session) {
         // Email confirmation is disabled, log in immediately
-        if (result.session.access_token) {
-          db.auth.setToken(result.session.access_token);
-        }
         // Ensure a Client record exists for this user
         const existing = await db.entities.Client.filter({ email });
         if (existing.length === 0) {
           await db.entities.Client.create({
-            name: email.split("@")[0],
+            name: fullName,
             email,
             total_visits: 0,
             total_spent: 0,
           });
         }
-        window.location.href = "/";
+        navigate("/", { replace: true });
       } else {
         // Email confirmation is enabled, show OTP verification screen
         setShowOtp(true);
@@ -63,23 +70,18 @@ export default function Register() {
     setError("");
     setLoading(true);
     try {
-      const result = await db.auth.verifyOtp({ email, otpCode });
-      if (result?.session?.access_token) {
-        db.auth.setToken(result.session.access_token);
-      } else if (/** @type {any} */ (result)?.access_token) {
-        db.auth.setToken(/** @type {any} */ (result).access_token);
-      }
+      await db.auth.verifyOtp({ email, otpCode });
       // Ensure a Client record exists for this user
       const existing = await db.entities.Client.filter({ email });
       if (existing.length === 0) {
         await db.entities.Client.create({
-          name: email.split("@")[0],
+          name: fullName,
           email,
           total_visits: 0,
           total_spent: 0,
         });
       }
-      window.location.href = "/";
+      navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "Código de verificação inválido");
     } finally {
@@ -91,6 +93,7 @@ export default function Register() {
     setError("");
     try {
       await db.auth.resendOtp(email);
+      setResendCooldown(60);
       toast({
         title: "Código enviado",
         description: "Verifique seu e-mail.",
@@ -150,8 +153,12 @@ export default function Register() {
         </Button>
         <p className="text-center text-sm text-muted-foreground mt-4">
           Não recebeu o código?{" "}
-          <button onClick={handleResend} className="text-primary font-medium hover:underline">
-            Reenviar
+          <button
+            onClick={handleResend}
+            className="text-primary font-medium hover:underline"
+            disabled={resendCooldown > 0}
+          >
+            {resendCooldown > 0 ? `Reenviar em ${resendCooldown}s` : 'Reenviar'}
           </button>
         </p>
       </AuthLayout>
@@ -198,6 +205,23 @@ export default function Register() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
+          <Label htmlFor="fullName">Nome completo</Label>
+          <div className="relative">
+            <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="fullName"
+              type="text"
+              autoComplete="name"
+              autoFocus
+              placeholder="Seu nome completo"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="pl-10 h-12"
+              required
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
@@ -205,7 +229,6 @@ export default function Register() {
               id="email"
               type="email"
               autoComplete="email"
-              autoFocus
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -261,7 +284,7 @@ export default function Register() {
             Autorizo o tratamento dos meus dados conforme a LGPD (Lei 13.709/2018).
           </label>
         </div>
-        <Button type="submit" className="w-full h-12 font-medium" disabled={loading || !lgpdConsent}>
+        <Button type="submit" className="w-full h-12 font-medium" disabled={loading || !lgpdConsent || !fullName.trim()}>
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />

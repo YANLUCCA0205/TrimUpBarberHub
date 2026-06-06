@@ -3,6 +3,8 @@ import db from '@/lib/db';
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { validateCPF, formatCPF, hashDocument } from '@/lib/cpfCnpjUtils';
+import { notifyBarberLinked, notifyBarberUnlinked } from '../lib/notifications';
 
 import { useAuth } from "@/lib/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -53,6 +55,8 @@ export default function ShopSettings() {
   const [editingService, setEditingService] = useState(null);
   const [serviceForm, setServiceForm] = useState(/** @type {any} */ ({ duration_minutes: "30", category: "corte", is_active: true }));
   const [showServiceForm, setShowServiceForm] = useState(false);
+  const [barberCpfInput, setBarberCpfInput] = useState("");
+  const [importingCpf, setImportingCpf] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -126,6 +130,54 @@ export default function ShopSettings() {
     setTimeout(() => setSaved(false), 2500);
   }
 
+  async function handleImportByCpf() {
+    const clean = barberCpfInput.replace(/\D/g, '');
+    if (clean.length !== 11) {
+      toast.error("Informe um CPF com 11 dígitos.");
+      return;
+    }
+    if (!validateCPF(clean)) {
+      toast.error("CPF inválido.");
+      return;
+    }
+    setImportingCpf(true);
+    try {
+      const hash = await hashDocument(clean);
+      const { data: prof, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('cpf_hash', hash)
+        .maybeSingle();
+      
+      if (error) throw error;
+      if (!prof) {
+        toast.error("Nenhum profissional encontrado com este CPF.");
+        return;
+      }
+      
+      setBarberForm(prev => ({
+        ...prev,
+        name: prof.full_name || prev.name || "",
+        photo: prof.avatar_url || prev.photo || "",
+        whatsapp: prof.phone || prev.whatsapp || "",
+        profile_id: prof.id
+      }));
+      toast.success("Dados do profissional importados!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao importar dados pelo CPF.");
+    } finally {
+      setImportingCpf(false);
+    }
+  }
+
+  function closeBarberForm() {
+    setShowBarberForm(false);
+    setEditingBarber(null);
+    setBarberForm({});
+    setBarberCpfInput("");
+  }
+
   // Barber CRUD
   async function saveBarber() {
     if (!barberForm.name) {
@@ -180,6 +232,12 @@ export default function ShopSettings() {
           notes: 'Desvinculado pelo administrador da barbearia.'
         });
 
+        try {
+          await notifyBarberUnlinked(bObj.profile_id, shop.name);
+        } catch (nErr) {
+          console.warn("Failed to send unlink notification:", nErr);
+        }
+
         toast.success(`${bObj.name} foi desvinculado com sucesso.`);
       } else {
         // Criado manualmente pelo admin, deleta permanente
@@ -212,6 +270,13 @@ export default function ShopSettings() {
       }
 
       await db.entities.BarberLinkRequest.update(req.id, { status: 'accepted' });
+
+      try {
+        await notifyBarberLinked(req.profile_id, shop.name);
+      } catch (nErr) {
+        console.warn("Failed to send link notification:", nErr);
+      }
+
       setLinkRequests(prev => prev.filter(r => r.id !== req.id));
 
       const updatedBarbers = await db.entities.Barber.filter({ shop_id: shop.id });
@@ -470,17 +535,57 @@ export default function ShopSettings() {
             <div className="p-5 rounded-2xl bg-card border border-primary/20 space-y-4">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold">{editingBarber ? "Editar barbeiro" : "Novo barbeiro"}</h4>
-                <button onClick={() => { setShowBarberForm(false); setEditingBarber(null); setBarberForm({}); }}>
+                <button onClick={closeBarberForm}>
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
+
+              {!editingBarber && (
+                <div className="p-4 rounded-xl bg-muted/30 border border-border/50 space-y-2.5">
+                  <Label className="text-xs font-semibold text-foreground">Importar dados por CPF</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="000.000.000-00"
+                      value={barberCpfInput}
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g, '');
+                        setBarberCpfInput(v.length <= 11 ? formatCPF(v) : v);
+                      }}
+                      className="bg-muted border-border/50 rounded-xl max-w-[200px]"
+                      maxLength={14}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleImportByCpf}
+                      disabled={importingCpf}
+                      className="rounded-xl text-xs h-9"
+                    >
+                      {importingCpf ? "Buscando..." : "Importar"}
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Se o profissional já tiver cadastro no TrimUp, seus dados serão preenchidos automaticamente.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Nome *">
-                  <Input value={barberForm.name || ""} onChange={e => setBarberForm(f => ({ ...f, name: e.target.value }))} className="bg-muted border-border/50 rounded-xl" />
-                </Field>
-                <Field label="Foto (URL)">
-                  <Input value={barberForm.photo || ""} onChange={e => setBarberForm(f => ({ ...f, photo: e.target.value }))} placeholder="https://..." className="bg-muted border-border/50 rounded-xl" />
-                </Field>
+                <div className="col-span-2">
+                  <Field label="Nome *">
+                    <Input value={barberForm.name || ""} onChange={e => setBarberForm(f => ({ ...f, name: e.target.value }))} className="bg-muted border-border/50 rounded-xl" />
+                  </Field>
+                </div>
+                <div className="col-span-2">
+                  <ImageUpload
+                    value={barberForm.photo}
+                    onChange={(url) => setBarberForm(prev => ({ ...prev, photo: url }))}
+                    onRemove={() => setBarberForm(prev => ({ ...prev, photo: '' }))}
+                    label="Foto do Barbeiro"
+                    aspect="square"
+                    maxSizeMB={5}
+                  />
+                </div>
               </div>
               <Field label="Quem sou eu / Bio">
                 <Textarea value={barberForm.bio || ""} onChange={e => setBarberForm(f => ({ ...f, bio: e.target.value }))} rows={3} placeholder="Apresentação do barbeiro, personalidade, estilo..." className="bg-muted border-border/50 rounded-xl resize-none" />

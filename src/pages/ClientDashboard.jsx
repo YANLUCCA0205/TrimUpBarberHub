@@ -1,12 +1,13 @@
-import db from '@/lib/db';
-
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh.jsx";
+import { useEntityQuery, useEntityUpdate } from "@/hooks/useSupabaseQuery";
+import { notifyAppointmentCancelled } from "@/lib/notifications";
 
 import { useAuth } from "@/lib/AuthContext";
 import { Link } from "react-router-dom";
 import { Calendar, Clock, Star, Sparkles, ArrowRight, TrendingUp, Scissors, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 const STATUS_MAP = {
   agendado: { label: "Agendado", color: "bg-blue-500/10 text-blue-400" },
@@ -18,26 +19,39 @@ const STATUS_MAP = {
 
 export default function ClientDashboard() {
   const { user } = useAuth();
-  const [appointments, setAppointments] = useState([]);
-  const [cancelling, setCancelling] = useState(null);
-  const [loading, setLoading] = useState(true);
+
+  // React Query for appointments
+  const { data: appointments = [], isLoading: loading, refetch } = useEntityQuery(
+    'Appointment',
+    { client_id: user?.id },
+    { enabled: !!user?.id, order: '-date', limit: 20 }
+  );
+
+  const updateAppointment = useEntityUpdate('Appointment');
 
   const loadData = useCallback(async () => {
-    if (!user) return;
-    const apts = await db.entities.Appointment.filter({ client_email: user.email }, "-date", 20);
-    setAppointments(apts);
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => { loadData(); }, [loadData]);
+    await refetch();
+  }, [refetch]);
 
   const { indicator } = usePullToRefresh(loadData);
 
   async function cancelAppointment(id) {
-    setCancelling(id);
-    await db.entities.Appointment.update(id, { status: "cancelado" });
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: "cancelado" } : a));
-    setCancelling(null);
+    try {
+      await updateAppointment.mutateAsync({ id, data: { status: "cancelado" } });
+      // Send notification to the barber
+      const apt = appointments.find(a => a.id === id);
+      if (apt?.barber_id) {
+        try {
+          await notifyAppointmentCancelled(apt.barber_id, apt);
+        } catch (err) {
+          console.error("Error sending cancellation notification:", err);
+        }
+      }
+      toast.success("Agendamento cancelado.");
+    } catch (err) {
+      console.error("Error cancelling appointment:", err);
+      toast.error("Erro ao cancelar agendamento.");
+    }
   }
 
   const upcoming = appointments.filter(a => ["agendado", "confirmado"].includes(a.status));
@@ -135,10 +149,10 @@ export default function ClientDashboard() {
                     {apt.price && <span className="text-sm font-bold text-primary">R$ {apt.price.toFixed(2)}</span>}
                     <button
                       onClick={() => cancelAppointment(apt.id)}
-                      disabled={cancelling === apt.id}
+                      disabled={updateAppointment.isPending}
                       className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
                     >
-                      <X className="w-3 h-3" />{cancelling === apt.id ? "Cancelando..." : "Cancelar"}
+                      <X className="w-3 h-3" />{updateAppointment.isPending ? "Cancelando..." : "Cancelar"}
                     </button>
                   </div>
                 </div>

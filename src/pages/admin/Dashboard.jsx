@@ -1,6 +1,8 @@
 import db from '@/lib/db';
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from '@tanstack/react-query';
+import { useEntityQuery } from '@/hooks/useSupabaseQuery';
 
 import { useAuth } from "@/lib/AuthContext";
 import { DollarSign, Scissors, TrendingUp, Clock, Zap, RefreshCw } from "lucide-react";
@@ -51,41 +53,55 @@ function getAutoBarberStatus(barber, todayAppts) {
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [shop, setShop] = useState(null);
-  const [barbers, setBarbers] = useState([]);
-  const [todayAppointments, setTodayAppointments] = useState([]);
-  const [allAppointments, setAllAppointments] = useState([]);
-  const [clients, setClients] = useState([]);
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data: shops = [], isLoading: loadingShops } = useEntityQuery(
+    'Shop',
+    user?.email ? { owner_email: user.email } : {},
+    { enabled: !!user?.email }
+  );
+  const shop = shops[0];
+
+  const { data: barbers = [], isLoading: loadingBarbers } = useEntityQuery(
+    'Barber',
+    shop?.id ? { shop_id: shop.id } : {},
+    { enabled: !!shop?.id }
+  );
+
+  const { data: allAppointments = [], isLoading: loadingAppointments } = useQuery({
+    queryKey: ['appointments', barbers.map(b => b.id)],
+    queryFn: async () => {
+      if (barbers.length === 0) return [];
+      const allA = [];
+      for (const barber of barbers) {
+        const a = await db.entities.Appointment.filter({ barber_id: barber.id }, "-date", 500);
+        allA.push(...a);
+      }
+      return allA;
+    },
+    enabled: barbers.length > 0,
+  });
+
+  const { data: clients = [], isLoading: loadingClients } = useEntityQuery(
+    'Client',
+    shop?.id ? { shop_id: shop.id } : {},
+    { enabled: !!shop?.id }
+  );
+
   const [barberStatuses, setBarberStatuses] = useState({});
   const [aiInsights, setAiInsights] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const today = new Date().toISOString().split("T")[0];
 
-  useEffect(() => {
-    if (!user) return;
-    async function load() {
-      const shops = await db.entities.Shop.filter({ owner_email: user.email });
-      if (shops.length === 0) { setLoading(false); return; }
-      const s = shops[0];
-      setShop(s);
-      const b = await db.entities.Barber.filter({ shop_id: s.id });
-      setBarbers(b);
-      if (b.length > 0) {
-        const allA = [];
-        for (const barber of b) {
-          const a = await db.entities.Appointment.filter({ barber_id: barber.id }, "-date", 500);
-          allA.push(...a);
-        }
-        setAllAppointments(allA);
-        setTodayAppointments(allA.filter(a => a.date === today));
-      }
-      const c = await db.entities.Client.filter({ shop_id: s.id });
-      setClients(c);
-      setLoading(false);
-    }
-    load();
-  }, [user]);
+  const todayAppointments = allAppointments.filter(a => a.date === today);
+
+  const loading = (
+    loadingShops ||
+    (!!shop && (
+      loadingBarbers ||
+      loadingClients ||
+      (barbers.length > 0 && loadingAppointments)
+    ))
+  );
 
   async function generateInsights() {
     if (!shop) return;

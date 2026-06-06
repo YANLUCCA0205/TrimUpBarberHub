@@ -1,6 +1,6 @@
-import db from '@/lib/db';
+import { useEntityQuery } from '@/hooks/useSupabaseQuery';
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh.jsx";
 
 import { useAuth } from "@/lib/AuthContext";
@@ -20,20 +20,11 @@ const CATEGORIES = [
 export default function Home() {
 
   const { user } = useAuth();
-  const [shops, setShops] = useState([]);
+  const { data: shops = [], isLoading: loading, refetch } = useEntityQuery('Shop', { is_active: true });
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  const loadShops = useCallback(async () => {
-    const s = await db.entities.Shop.list("-rating", 30);
-    setShops(s);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { loadShops(); }, [loadShops]);
-
-  const { indicator } = usePullToRefresh(loadShops);
+  const { indicator } = usePullToRefresh(refetch);
 
   const filtered = shops.filter(s => {
     const matchSearch = !search ||

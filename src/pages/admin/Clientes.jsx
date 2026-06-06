@@ -1,6 +1,11 @@
 import db from '@/lib/db';
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEntityQuery, useEntityCreate, useEntityUpdate, useEntityDelete } from "@/hooks/useSupabaseQuery";
+import { formatCEP, validateCEP, fetchAddressByCEP } from '@/utils/cepUtils';
+import { BRAZILIAN_STATES } from '@/utils/brazilianStates';
+import { validateCPF, formatCPF } from '@/lib/cpfCnpjUtils';
 
 import { useAuth } from "@/lib/AuthContext";
 import { Plus, Edit2, Trash2, X, Check, Users, Search, Star, MapPin, Phone } from "lucide-react";
@@ -14,7 +19,7 @@ import { toast } from "sonner";
 const SOURCES = ["indicação", "instagram", "google", "passagem", "whatsapp", "outro"];
 
 const emptyForm = {
-  name: "", phone: "", whatsapp: "", email: "",
+  name: "", phone: "", whatsapp: "", email: "", cpf: "",
   street: "", street_number: "", complement: "",
   neighborhood: "", city: "", cep: "", state: "", notes: "",
   birthday: "", source: "indicação", is_vip: false,
@@ -22,65 +27,166 @@ const emptyForm = {
 
 export default function Clientes() {
   const { user } = useAuth();
-  const [shop, setShop] = useState(null);
-  const [clients, setClients] = useState([]);
-  const [appointments, setAppointments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  
+  // React Query queries
+  const { data: shops = [], isLoading: loadingShops } = useEntityQuery(
+    'Shop',
+    { owner_email: user?.email },
+    { enabled: !!user?.email }
+  );
+  const shop = shops[0] || null;
+
+  const { data: clients = [], isLoading: loadingClients } = useEntityQuery(
+    'Client',
+    { shop_id: shop?.id },
+    { enabled: !!shop?.id }
+  );
+
+  const { data: barbers = [], isLoading: loadingBarbers } = useEntityQuery(
+    'Barber',
+    { shop_id: shop?.id },
+    { enabled: !!shop?.id }
+  );
+
+  const barberIds = barbers.map(b => b.id);
+  const { data: appointments = [], isLoading: loadingAppointments } = useQuery({
+    queryKey: ['appointments', barberIds],
+    queryFn: async () => {
+      const allAppts = [];
+      for (const bId of barberIds) {
+        const a = await db.entities.Appointment.filter({ barber_id: bId }, "-date", 200);
+        allAppts.push(...a);
+      }
+      return allAppts;
+    },
+    enabled: barberIds.length > 0,
+  });
+
+  const createClientMutation = useEntityCreate('Client');
+  const updateClientMutation = useEntityUpdate('Client');
+  const deleteClientMutation = useEntityDelete('Client');
+
+  const loading = loadingShops || loadingClients || loadingBarbers || (barberIds.length > 0 && loadingAppointments);
+  const isSaving = createClientMutation.isPending || updateClientMutation.isPending;
+
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [form, setForm] = useState(emptyForm);
-
-  useEffect(() => {
-    if (!user) return;
-    async function load() {
-      const shops = await db.entities.Shop.filter({ owner_email: user.email });
-      if (shops.length > 0) {
-        const s = shops[0];
-        setShop(s);
-        const c = await db.entities.Client.filter({ shop_id: s.id });
-        setClients(c);
-        // Load appointments to build client history from booking data
-        const barbers = await db.entities.Barber.filter({ shop_id: s.id });
-        if (barbers.length > 0) {
-          const allAppts = [];
-          for (const b of barbers) {
-            const a = await db.entities.Appointment.filter({ barber_id: b.id }, "-date", 200);
-            allAppts.push(...a);
-          }
-          setAppointments(allAppts);
-        }
-      }
-      setLoading(false);
-    }
-    load();
-  }, [user]);
+  const [cepLoading, setCepLoading] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  async function handleCepChange(value) {
+    const formatted = formatCEP(value);
+    set('cep', formatted);
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 8 && validateCEP(clean)) {
+      setCepLoading(true);
+      try {
+        const address = await fetchAddressByCEP(clean);
+        if (address) {
+          setForm(f => ({
+            ...f,
+            cep: formatted,
+            street: address.logradouro || f.street || '',
+            neighborhood: address.bairro || f.neighborhood || '',
+            city: address.localidade || f.city || '',
+            state: address.uf || f.state || '',
+          }));
+          toast.success('Endereço encontrado!');
+        } else {
+          toast.error('CEP não encontrado. Preencha manualmente.');
+        }
+      } catch {
+        toast.error('Erro ao buscar CEP. Preencha manualmente.');
+      } finally {
+        setCepLoading(false);
+      }
+    }
+  }
+
   async function saveClient() {
     if (!form.name) { toast.error("Nome é obrigatório."); return; }
-    const data = { ...form, shop_id: shop?.id };
-    if (editingClient) {
-      const updated = await db.entities.Client.update(editingClient.id, data);
-      setClients(cs => cs.map(c => c.id === editingClient.id ? updated : c));
-      toast.success("Cliente atualizado!");
-    } else {
-      const created = await db.entities.Client.create(data);
-      setClients(cs => [...cs, created]);
-      toast.success("Cliente cadastrado!");
+    
+    // CPF Validation
+    if (form.cpf) {
+      const clean = form.cpf.replace(/\D/g, '');
+      if (clean.length > 0 && clean.length < 11) {
+        toast.error("CPF incompleto. Informe todos os 11 dígitos.");
+        return;
+      }
+      if (clean.length === 11 && !validateCPF(clean)) {
+        toast.error("CPF inválido. Verifique o número informado.");
+        return;
+      }
     }
-    setShowForm(false);
-    setEditingClient(null);
-    setForm(emptyForm);
+
+    // Duplicate checks
+    const cleanPhone = (val) => val ? val.replace(/\D/g, '') : '';
+    const cleanCpf = (val) => val ? val.replace(/\D/g, '') : '';
+
+    const newPhone = cleanPhone(form.phone);
+    const newWhatsapp = cleanPhone(form.whatsapp);
+    const newCpf = cleanCpf(form.cpf);
+    const newEmail = form.email?.trim().toLowerCase();
+
+    const duplicate = clients.find(c => {
+      if (editingClient && c.id === editingClient.id) return false;
+
+      if (newEmail && c.email?.trim().toLowerCase() === newEmail) return true;
+      if (newCpf && cleanCpf(c.cpf) === newCpf) return true;
+      
+      const cPhone = cleanPhone(c.phone);
+      const cWhatsapp = cleanPhone(c.whatsapp);
+      if (newPhone && (cPhone === newPhone || cWhatsapp === newPhone)) return true;
+      if (newWhatsapp && (cPhone === newWhatsapp || cWhatsapp === newWhatsapp)) return true;
+
+      return false;
+    });
+
+    if (duplicate) {
+      let duplicateField = "";
+      if (newEmail && duplicate.email?.trim().toLowerCase() === newEmail) {
+        duplicateField = `e-mail (${newEmail})`;
+      } else if (newCpf && cleanCpf(duplicate.cpf) === newCpf) {
+        duplicateField = `CPF (${form.cpf})`;
+      } else {
+        duplicateField = `telefone/WhatsApp`;
+      }
+      toast.error(`Já existe um cliente cadastrado com este ${duplicateField}.`);
+      return;
+    }
+
+    const data = { ...form, shop_id: shop?.id };
+    
+    try {
+      if (editingClient) {
+        await updateClientMutation.mutateAsync({ id: editingClient.id, data });
+        toast.success("Cliente atualizado!");
+      } else {
+        await createClientMutation.mutateAsync(data);
+        toast.success("Cliente cadastrado!");
+      }
+      setShowForm(false);
+      setEditingClient(null);
+      setForm(emptyForm);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao salvar cliente.");
+    }
   }
 
   async function deleteClient(id) {
-    await db.entities.Client.delete(id);
-    setClients(cs => cs.filter(c => c.id !== id));
-    if (selectedClient?.id === id) setSelectedClient(null);
-    toast.success("Cliente removido.");
+    try {
+      await deleteClientMutation.mutateAsync(id);
+      if (selectedClient?.id === id) setSelectedClient(null);
+      toast.success("Cliente removido.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao remover cliente.");
+    }
   }
 
   function editClient(c) {
@@ -183,8 +289,23 @@ export default function Clientes() {
                   <Input value={form.email || ""} onChange={e => set("email", e.target.value)} className="bg-muted border-border/50 rounded-xl" />
                 </div>
                 <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">CPF</Label>
+                  <Input value={form.cpf || ""} onChange={e => set("cpf", formatCPF(e.target.value))} placeholder="000.000.000-00" className="bg-muted border-border/50 rounded-xl" maxLength={14} />
+                </div>
+                <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">CEP</Label>
-                  <Input value={form.cep || ""} onChange={e => set("cep", e.target.value)} placeholder="00000-000" className="bg-muted border-border/50 rounded-xl" />
+                  <div className="relative">
+                    <Input 
+                      value={form.cep || ""} 
+                      onChange={e => handleCepChange(e.target.value)} 
+                      placeholder="00000-000" 
+                      className="bg-muted border-border/50 rounded-xl pr-9" 
+                      maxLength={9} 
+                    />
+                    {cepLoading && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                    )}
+                  </div>
                 </div>
                 <div className="col-span-2 grid grid-cols-3 gap-2">
                   <div className="col-span-2">
@@ -210,7 +331,18 @@ export default function Clientes() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">Estado</Label>
-                  <Input value={form.state || ""} onChange={e => set("state", e.target.value)} placeholder="SP" maxLength={2} className="bg-muted border-border/50 rounded-xl" />
+                  <Select value={form.state || ""} onValueChange={v => set("state", v)}>
+                    <SelectTrigger className="bg-muted border-border/50 rounded-xl">
+                      <SelectValue placeholder="UF" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BRAZILIAN_STATES.map(s => (
+                        <SelectItem key={s.value} value={s.value}>
+                          {s.value} — {s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">Origem</Label>
@@ -232,8 +364,8 @@ export default function Clientes() {
                   <label htmlFor="vip" className="text-sm flex items-center gap-1"><Star className="w-3 h-3 text-primary" /> Cliente VIP</label>
                 </div>
               </div>
-              <Button onClick={saveClient} className="bg-primary text-primary-foreground rounded-xl gap-2">
-                <Check className="w-4 h-4" /> {editingClient ? "Salvar" : "Cadastrar"}
+              <Button onClick={saveClient} disabled={isSaving} className="bg-primary text-primary-foreground rounded-xl gap-2">
+                <Check className="w-4 h-4" /> {isSaving ? "Salvando..." : (editingClient ? "Salvar" : "Cadastrar")}
               </Button>
             </div>
           )}

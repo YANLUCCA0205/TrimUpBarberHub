@@ -1,12 +1,12 @@
 import db from '@/lib/db';
-
-import { useState, useEffect } from "react";
-
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { ChevronLeft, ChevronRight, Check, Star, MapPin, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEntityQuery, useEntityGet, useEntityMutation } from "@/hooks/useSupabaseQuery";
 
 const timeSlots = ["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00"];
 
@@ -14,121 +14,184 @@ const STEPS = ["Barbearia", "Barbeiro", "Serviço", "Horário", "Confirmar"];
 
 export default function Booking() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
   const [step, setStep] = useState(0);
-  const [shops, setShops] = useState([]);
-  const [barbers, setBarbers] = useState([]);
-  const [services, setServices] = useState([]);
   const [selectedShop, setSelectedShop] = useState(null);
   const [selectedBarber, setSelectedBarber] = useState(null); // null = sem preferência
   const [noPreference, setNoPreference] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
-  const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
-  const [takenSlots, setTakenSlots] = useState([]);
   const [isBarberBooking, setIsBarberBooking] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      // Check if user is a barber and associated with a shop
-      const isUserBarber = user?.roles?.includes("barber") || user?.role === "barber";
-      let activeBarberProfile = null;
-      
-      if (isUserBarber) {
-        const bData = await db.entities.Barber.filter({ profile_id: user.id });
-        if (bData.length > 0 && bData[0].shop_id) {
-          activeBarberProfile = bData[0];
-        }
-      }
+  // 1. Initial queries to detect if current user is a barber with a shop profile
+  const isUserBarber = user?.roles?.includes("barber") || user?.role === "barber";
+  
+  const { data: barberProfiles = [], isLoading: barberLoading } = useEntityQuery(
+    "Barber",
+    user?.id ? { profile_id: user.id } : {},
+    { enabled: !!user?.id && isUserBarber }
+  );
+  
+  const activeBarberProfile = barberProfiles[0];
+  
+  const { data: activeBarberShop, isLoading: barberShopLoading } = useEntityGet(
+    "Shop",
+    activeBarberProfile?.shop_id,
+    { enabled: !!activeBarberProfile?.shop_id }
+  );
 
-      if (activeBarberProfile) {
-        const shop = await db.entities.Shop.get(activeBarberProfile.shop_id);
-        if (shop) {
-          setSelectedShop(shop);
-          setSelectedBarber(activeBarberProfile);
-          const svcs = await db.entities.Service.filter({ barber_id: activeBarberProfile.id });
-          setServices(svcs.filter(x => x.is_active !== false));
-          setIsBarberBooking(true);
-          setStep(2);
-          setLoading(false);
-          return;
-        }
-      }
+  // 2. Initial queries for URL parameters
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const urlShopId = params.get("shop");
+  const urlBarberId = params.get("barber");
 
-      const s = await db.entities.Shop.list("-rating");
-      setShops(s.filter(x => x.is_active !== false));
+  const { data: urlShop, isLoading: urlShopLoading } = useEntityGet(
+    "Shop",
+    urlShopId,
+    { enabled: !!urlShopId }
+  );
 
-      // Handle URL params
-      const params = new URLSearchParams(window.location.search);
-      const shopId = params.get("shop");
-      const barberId = params.get("barber");
+  const { data: urlBarber, isLoading: urlBarberLoading } = useEntityGet(
+    "Barber",
+    urlBarberId,
+    { enabled: !!urlBarberId }
+  );
 
-      if (shopId) {
-        const shop = s.find(x => x.id === shopId);
-        if (shop) {
-          setSelectedShop(shop);
-          const b = await db.entities.Barber.filter({ shop_id: shopId });
-          setBarbers(b);
-          if (barberId) {
-            const barber = b.find(x => x.id === barberId);
-            if (barber) {
-              setSelectedBarber(barber);
-              const svcs = await db.entities.Service.filter({ barber_id: barberId });
-              setServices(svcs.filter(x => x.is_active !== false));
-              setStep(2);
-            } else {
-              setStep(1);
-            }
-          } else {
-            setStep(1);
-          }
-        }
-      }
-      setLoading(false);
+  // 3. React Query hooks for fetching standard options
+  // List of active shops
+  const { data: rawShops = [] } = useEntityQuery(
+    "Shop",
+    {},
+    { order: "-rating" }
+  );
+  const shops = useMemo(() => rawShops.filter(x => x.is_active !== false), [rawShops]);
+
+  // List of active barbers for selected shop
+  const { data: rawBarbers = [] } = useEntityQuery(
+    "Barber",
+    selectedShop?.id ? { shop_id: selectedShop.id } : {},
+    { enabled: !!selectedShop?.id }
+  );
+  const barbers = useMemo(() => rawBarbers.filter(x => x.is_active !== false), [rawBarbers]);
+
+  // List of services for chosen barber or all barbers in shop (no preference)
+  const barberIds = useMemo(() => barbers.map(b => b.id), [barbers]);
+
+  const serviceFilters = useMemo(() => {
+    if (noPreference) {
+      return barberIds.length > 0 ? { barber_id: { $in: barberIds } } : null;
     }
-    load();
-  }, [user]);
+    return selectedBarber?.id ? { barber_id: selectedBarber.id } : null;
+  }, [noPreference, barberIds, selectedBarber]);
 
-  async function selectShop(shop) {
+  const { data: rawServices = [] } = useEntityQuery(
+    "Service",
+    serviceFilters || {},
+    { enabled: !!serviceFilters }
+  );
+
+  const services = useMemo(() => {
+    const active = rawServices.filter(x => x.is_active !== false);
+    if (!noPreference) return active;
+
+    const allServices = [];
+    active.forEach(svc => {
+      if (!allServices.find(x => x.name === svc.name)) {
+        const b = barbers.find(barber => barber.id === svc.barber_id);
+        allServices.push({ ...svc, _barber: b });
+      }
+    });
+    return allServices;
+  }, [rawServices, noPreference, barbers]);
+
+  // 4. React Query hook for taken slots on a specific date for selected barber
+  const appointmentFilters = useMemo(() => {
+    if (selectedBarber?.id && selectedDate) {
+      return { barber_id: selectedBarber.id, date: selectedDate };
+    }
+    return null;
+  }, [selectedBarber?.id, selectedDate]);
+
+  const { data: appointmentSlots = [] } = useEntityQuery(
+    "Appointment",
+    appointmentFilters || {},
+    { enabled: !!appointmentFilters }
+  );
+
+  const takenSlots = useMemo(() => {
+    return appointmentSlots
+      .filter(a => !["cancelado", "faltou"].includes(a.status))
+      .map(a => a.time);
+  }, [appointmentSlots]);
+
+  // Mutations
+  const createAppointmentMutation = useEntityMutation("Appointment", "create");
+  const createClientMutation = useEntityMutation("Client", "create");
+  const updateClientMutation = useEntityMutation("Client", "update");
+
+  // Effect to handle initialization from auth status or url query params
+  useEffect(() => {
+    if (!user) return;
+
+    if (isUserBarber && (barberLoading || (activeBarberProfile?.shop_id && barberShopLoading))) {
+      return;
+    }
+    if (urlShopId && urlShopLoading) return;
+    if (urlBarberId && urlBarberLoading) return;
+
+    if (initialLoaded) return;
+
+    if (isUserBarber && activeBarberProfile && activeBarberShop) {
+      setSelectedShop(activeBarberShop);
+      setSelectedBarber(activeBarberProfile);
+      setIsBarberBooking(true);
+      setStep(2);
+    } else if (urlShopId && urlShop) {
+      setSelectedShop(urlShop);
+      if (urlBarberId && urlBarber) {
+        setSelectedBarber(urlBarber);
+        setStep(2);
+      } else {
+        setStep(1);
+      }
+    }
+    
+    setInitialLoaded(true);
+  }, [
+    user,
+    isUserBarber,
+    barberLoading,
+    activeBarberProfile,
+    barberShopLoading,
+    activeBarberShop,
+    urlShopId,
+    urlShopLoading,
+    urlShop,
+    urlBarberId,
+    urlBarberLoading,
+    urlBarber,
+    initialLoaded
+  ]);
+
+  function selectShop(shop) {
     setSelectedShop(shop);
-    const b = await db.entities.Barber.filter({ shop_id: shop.id });
-    setBarbers(b.filter(x => x.is_active !== false));
     setStep(1);
   }
 
-  async function selectBarber(barber) {
+  function selectBarber(barber) {
     setSelectedBarber(barber);
     setNoPreference(false);
-    const s = await db.entities.Service.filter({ barber_id: barber.id });
-    setServices(s.filter(x => x.is_active !== false));
     setStep(2);
   }
 
-  async function selectNoPreference() {
+  function selectNoPreference() {
     setNoPreference(true);
     setSelectedBarber(null);
-    // Load all services from all barbers in this shop
-    const allServices = [];
-    for (const b of barbers) {
-      const s = await db.entities.Service.filter({ barber_id: b.id });
-      s.filter(x => x.is_active !== false).forEach(svc => {
-        if (!allServices.find(x => x.name === svc.name)) {
-          allServices.push({ ...svc, _barber: b });
-        }
-      });
-    }
-    setServices(allServices);
     setStep(2);
-  }
-
-  async function loadTakenSlots(barberId, date) {
-    if (!barberId || !date) return;
-    const appts = await db.entities.Appointment.filter({ barber_id: barberId });
-    const taken = appts
-      .filter(a => a.date === date && !["cancelado", "faltou"].includes(a.status))
-      .map(a => a.time);
-    setTakenSlots(taken);
   }
 
   function selectService(service) {
@@ -137,20 +200,27 @@ export default function Booking() {
       setSelectedBarber(service._barber);
     }
     setStep(3);
-    // Load taken slots for this barber on already-selected date
-    if (selectedDate) {
-      const bid = (noPreference && service._barber) ? service._barber.id : selectedBarber?.id;
-      if (bid) loadTakenSlots(bid, selectedDate);
-    }
   }
 
   async function confirmBooking() {
-    // Final conflict check
-    if (takenSlots.includes(selectedTime)) {
-      toast.error("Este horário já foi reservado. Escolha outro.");
+    // 1. Secure conflict check: fetch fresh list from db right before creating the appointment to avoid race conditions
+    const latestAppts = await db.entities.Appointment.filter({
+      barber_id: selectedBarber.id,
+      date: selectedDate
+    });
+    
+    const isSlotTaken = latestAppts.some(
+      a => a.time === selectedTime && !["cancelado", "faltou"].includes(a.status)
+    );
+    
+    if (isSlotTaken) {
+      toast.error("Este horário já foi reservado por outro cliente. Por favor, escolha outro.");
       setStep(3);
+      queryClient.invalidateQueries({ queryKey: ["Appointment"] });
       return;
     }
+
+    // 2. Secure past booking check: ensure time has not passed
     const todayStr = new Date().toISOString().split("T")[0];
     const nowTimeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
     if (selectedDate < todayStr || (selectedDate === todayStr && selectedTime <= nowTimeStr)) {
@@ -158,54 +228,64 @@ export default function Booking() {
       setStep(3);
       return;
     }
+
     setBooking(true);
-    await db.entities.Appointment.create({
-      barber_id: selectedBarber.id,
-      barber_name: selectedBarber.name,
-      client_id: user.id,
-      client_email: user.email,
-      client_name: user.full_name,
-      shop_id: selectedShop.id,
-      service_id: selectedService.id,
-      service_name: selectedService.name,
-      date: selectedDate,
-      time: selectedTime,
-      price: selectedService.price,
-      status: "agendado",
-    });
+    try {
+      await createAppointmentMutation.mutateAsync({
+        barber_id: selectedBarber.id,
+        barber_name: selectedBarber.name,
+        client_id: user.id,
+        client_email: user.email,
+        client_name: user.full_name,
+        shop_id: selectedShop.id,
+        service_id: selectedService.id,
+        service_name: selectedService.name,
+        date: selectedDate,
+        time: selectedTime,
+        price: selectedService.price,
+        status: "agendado",
+      });
 
-    // Upsert Client CRM record with updated stats for this specific shop
-    const existingClients = await db.entities.Client.filter({ shop_id: selectedShop.id, email: user.email });
-    if (existingClients.length > 0) {
-      const c = existingClients[0];
-      const newVisits = (c.total_visits || 0) + 1;
-      const newSpent = (c.total_spent || 0) + (selectedService.price || 0);
-      await db.entities.Client.update(c.id, {
-        last_visit: selectedDate,
-        total_visits: newVisits,
-        total_spent: newSpent,
-        avg_ticket: newVisits > 0 ? Math.round(newSpent / newVisits) : 0,
-        shop_id: selectedShop.id,
-        barber_id: selectedBarber.id,
-        profile_id: user.id
-      });
-    } else {
-      await db.entities.Client.create({
-        name: user.full_name || user.email,
-        email: user.email,
-        profile_id: user.id,
-        shop_id: selectedShop.id,
-        barber_id: selectedBarber.id,
-        last_visit: selectedDate,
-        total_visits: 1,
-        total_spent: selectedService.price || 0,
-        avg_ticket: selectedService.price || 0,
-      });
+      // Upsert Client CRM record with updated stats for this specific shop
+      const existingClients = await db.entities.Client.filter({ shop_id: selectedShop.id, email: user.email });
+      if (existingClients.length > 0) {
+        const c = existingClients[0];
+        const newVisits = (c.total_visits || 0) + 1;
+        const newSpent = (c.total_spent || 0) + (selectedService.price || 0);
+        await updateClientMutation.mutateAsync({
+          id: c.id,
+          data: {
+            last_visit: selectedDate,
+            total_visits: newVisits,
+            total_spent: newSpent,
+            avg_ticket: newVisits > 0 ? Math.round(newSpent / newVisits) : 0,
+            shop_id: selectedShop.id,
+            barber_id: selectedBarber.id,
+            profile_id: user.id
+          }
+        });
+      } else {
+        await createClientMutation.mutateAsync({
+          name: user.full_name || user.email,
+          email: user.email,
+          profile_id: user.id,
+          shop_id: selectedShop.id,
+          barber_id: selectedBarber.id,
+          last_visit: selectedDate,
+          total_visits: 1,
+          total_spent: selectedService.price || 0,
+          avg_ticket: selectedService.price || 0,
+        });
+      }
+
+      toast.success("Agendamento confirmado!");
+      setStep(5);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao confirmar agendamento. Tente novamente.");
+    } finally {
+      setBooking(false);
     }
-
-    toast.success("Agendamento confirmado!");
-    setStep(5);
-    setBooking(false);
   }
 
   const today = new Date().toISOString().split("T")[0];
@@ -225,11 +305,9 @@ export default function Booking() {
     setSelectedService(null);
     setSelectedDate("");
     setSelectedTime("");
-    setBarbers([]);
-    setServices([]);
   }
 
-  if (loading) {
+  if (!initialLoaded) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -383,7 +461,7 @@ export default function Booking() {
             <h3 className="text-sm font-medium text-muted-foreground mb-3">Data</h3>
             <div className="flex gap-2 overflow-x-auto pb-2">
               {dates.map(d => (
-                <button key={d.date} onClick={() => { setSelectedDate(d.date); loadTakenSlots(selectedBarber?.id, d.date); setSelectedTime(""); }}
+                <button key={d.date} onClick={() => { setSelectedDate(d.date); setSelectedTime(""); }}
                   className={`flex flex-col items-center px-4 py-3 rounded-xl min-w-[60px] transition-all ${
                     selectedDate === d.date ? "bg-primary text-primary-foreground" : "bg-card border border-border/50 hover:border-primary/30"
                   }`}>

@@ -5,8 +5,10 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { Navigate } from 'react-router-dom';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import RegistrationGuard from '@/components/RegistrationGuard';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -55,7 +57,7 @@ function SmartHome() {
 }
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isRecovery } = useAuth();
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
@@ -88,7 +90,7 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-        <Route element={<Layout />}>
+        <Route element={<RegistrationGuard><Layout /></RegistrationGuard>}>
           <Route path="/" element={<SmartHome />} />
           <Route path="/explore" element={<Home />} />
           <Route path="/dashboard" element={<ClientDashboard />} />
@@ -102,7 +104,7 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<RoleRoute allowedRoles={["admin", "siteowner"]} redirectTo="/" />}>
-          <Route element={<AdminLayout />}>
+          <Route element={<RegistrationGuard><AdminLayout /></RegistrationGuard>}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/agenda" element={<AdminAgenda />} />
             <Route path="/admin/clientes" element={<AdminClientes />} />
@@ -114,7 +116,7 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<RoleRoute allowedRoles={["siteowner"]} redirectTo="/" />}>
-          <Route element={<SiteOwnerLayout />}>
+          <Route element={<RegistrationGuard><SiteOwnerLayout /></RegistrationGuard>}>
             <Route path="/siteowner" element={<SiteOwnerDashboard />} />
             <Route path="/siteowner/planos" element={<SiteOwnerPlanos />} />
             <Route path="/siteowner/assinaturas" element={<SiteOwnerAssinaturas />} />
@@ -130,14 +132,16 @@ const AuthenticatedApp = () => {
 function App() {
 
   return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+        </QueryClientProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }
 

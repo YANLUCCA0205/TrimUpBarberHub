@@ -23,6 +23,7 @@ ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS cnpj_last4 text;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS phone text;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS slogan text;
+ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS razao_social text;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS whatsapp text;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS instagram text;
 ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS neighborhood text;

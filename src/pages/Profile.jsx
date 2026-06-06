@@ -1,17 +1,23 @@
 import db from '@/lib/db';
 import { validateCPF, validateCNPJ, formatCPF, formatCNPJ, hashDocument, getLast4Digits } from '@/lib/cpfCnpjUtils';
 import { supabase } from "@/lib/supabase";
+import { formatCEP, validateCEP, fetchAddressByCEP } from '@/utils/cepUtils';
+import { BRAZILIAN_STATES } from '@/utils/brazilianStates';
 
 import { useAuth } from "@/lib/AuthContext";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEntityQuery, useEntityGet, useEntityCreate } from "@/hooks/useSupabaseQuery";
+
 import ImageUpload from '../components/ImageUpload';
-import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2, Shield } from "lucide-react";
+import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2, Shield, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from "sonner";
 
 const STATUS_LABELS = {
@@ -26,129 +32,197 @@ const STATUS_COLORS = {
 
 export default function Profile() {
   const { user } = useAuth();
-  const [client, setClient] = useState(null);
-  const [appointments, setAppointments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const queryClient = useQueryClient();
+
   const [form, setForm] = useState(/** @type {any} */ ({}));
   const [tab, setTab] = useState("historico");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editing, setEditing] = useState(false);
 
-  const [barberProfile, setBarberProfile] = useState(null);
-  const [linkRequest, setLinkRequest] = useState(null);
-  const [availableShops, setAvailableShops] = useState([]);
   const [selectedShopId, setSelectedShopId] = useState("");
   const [barberForm, setBarberForm] = useState({ name: "", bio: "", specialties: "" });
-  const [shopForm, setShopForm] = useState({ name: "", address: "", phone: "", cnpj: "", startTime: "08:00", endTime: "19:00" });
-  const [barberLoading, setBarberLoading] = useState(false);
-  const [shopLoading, setShopLoading] = useState(false);
-  const [userShops, setUserShops] = useState([]);
+  const [shopForm, setShopForm] = useState({
+    name: "",
+    razao_social: "",
+    cep: "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    phone: "",
+    whatsapp: "",
+    cnpj: "",
+    startTime: "08:00",
+    endTime: "19:00"
+  });
   const [avatarUrl, setAvatarUrl] = useState("");
   const [cpfInput, setCpfInput] = useState("");
   const [cpfSaved, setCpfSaved] = useState(false);
-  const [barberHistory, setBarberHistory] = useState([]);
+  const [cepLoading, setCepLoading] = useState(false);
+  const [shopCepLoading, setShopCepLoading] = useState(false);
+
+  // Queries
+  // 1. Profile Data from profiles table
+  const { data: profileData, isLoading: profileLoading } = useEntityGet(
+    'profiles',
+    user?.id,
+    { enabled: !!user?.id }
+  );
+
+  // 2. Client Record
+  const { data: clientList = [], isLoading: clientLoading } = useEntityQuery(
+    'Client',
+    user?.email ? { email: user.email } : {},
+    { enabled: !!user?.email }
+  );
+  const client = clientList[0] || null;
+
+  // 3. Appointments
+  const { data: appointments = [], isLoading: appointmentsLoading } = useEntityQuery(
+    'Appointment',
+    user?.email ? { client_email: user.email } : {},
+    {
+      enabled: !!user?.email,
+      order: '-date',
+      limit: 50
+    }
+  );
+
+  // 4. Available Shops
+  const { data: availableShops = [], isLoading: availableShopsLoading } = useEntityQuery('Shop');
+
+  // 5. User's Owned Shops
+  const { data: userShops = [], isLoading: userShopsLoading } = useEntityQuery(
+    'Shop',
+    user?.id ? { owner_id: user.id } : {},
+    { enabled: !!user?.id }
+  );
+
+  // 6. Barber Profile
+  const { data: barbers = [], isLoading: barberQueryLoading } = useEntityQuery(
+    'Barber',
+    user?.id ? { profile_id: user.id } : {},
+    { enabled: !!user?.id }
+  );
+  const barberProfile = barbers[0] || null;
+
+  // 7. Barber Link Request
+  const { data: linkRequests = [], isLoading: linkRequestLoading } = useEntityQuery(
+    'BarberLinkRequest',
+    user?.id ? { profile_id: user.id, status: 'pending' } : {},
+    { enabled: !!user?.id && !!barberProfile }
+  );
+  const linkRequest = linkRequests[0] || null;
+
+  // 8. Barber Link History
+  const { data: barberHistoryData = [], isLoading: barberHistoryLoading } = useEntityQuery(
+    'BarberLinkHistory',
+    user?.id ? { profile_id: user.id } : {},
+    { enabled: !!user?.id && !!barberProfile }
+  );
+
+  // Auto-creation of Client record if it doesn't exist
+  const createClientMutation = useEntityCreate('Client');
 
   useEffect(() => {
-    if (!user) return;
-    async function load() {
-      setAvatarUrl(user?.avatar_url || "");
-      // 1. Load appointments
-      let appts = [];
-      try {
-        appts = await db.entities.Appointment.filter({ client_email: user.email }, "-date", 50);
-        setAppointments(appts);
-      } catch (err) {
-        console.error("Error loading appointments:", err);
-      }
-
-      // 2. Find or create Client record linked to this user
-      try {
-        const existing = await db.entities.Client.filter({ email: user.email });
-        if (existing.length > 0) {
-          setClient(existing[0]);
-          setForm(existing[0]);
-        } else {
-          // Auto-create Client for this user
-          const created = await db.entities.Client.create({
-            profile_id: user.id,
-            name: user.full_name || user.email.split("@")[0],
-            email: user.email,
-            total_visits: appts.filter(a => a.status === "concluido").length,
-            total_spent: appts.filter(a => a.status === "concluido").reduce((s, a) => s + (a.price || 0), 0),
-          });
-          setClient(created);
-          setForm(created);
-        }
-      } catch (err) {
-        console.error("Error loading or creating client record:", err);
-      }
-
-      // 3. Load shops list
-      let shopsData = [];
-      try {
-        shopsData = await db.entities.Shop.list();
-        setAvailableShops(shopsData);
-      } catch (err) {
-        console.error("Error loading available shops:", err);
-      }
-
-      // Load CPF info from profiles table
-      try {
-        const { data: profileData } = await supabase.from('profiles').select('cpf_last4, lgpd_consent').eq('id', user.id).single();
-        if (profileData?.cpf_last4) {
-          setCpfInput('***.***.*' + profileData.cpf_last4.slice(0, 1) + '*-' + profileData.cpf_last4.slice(-2));
-          setCpfSaved(true);
-        }
-      } catch (err) {
-        console.error('Error loading CPF info:', err);
-      }
-
-      // 4. Load barber profile if exists
-      try {
-        const barbers = await db.entities.Barber.filter({ profile_id: user.id });
-        if (barbers.length > 0) {
-          setBarberProfile(barbers[0]);
-          setBarberForm({
-            name: barbers[0].name || "",
-            bio: barbers[0].bio || "",
-            specialties: barbers[0].specialties ? barbers[0].specialties.join(", ") : ""
-          });
-          // Load pending link request
-          const reqs = await db.entities.BarberLinkRequest.filter({ profile_id: user.id, status: "pending" });
-          if (reqs.length > 0) {
-            setLinkRequest(reqs[0]);
-          }
-          // Load barber link history
-          try {
-            const history = await db.entities.BarberLinkHistory.filter({ profile_id: user.id });
-            const enriched = history.map(h => {
-              const shop = shopsData.find(s => s.id === h.shop_id);
-              return { ...h, shop_name: shop?.name || 'Barbearia desconhecida' };
-            });
-            setBarberHistory(enriched);
-          } catch (err) {
-            console.error('Error loading barber history:', err);
-          }
-        } else {
-          setBarberForm({ name: user.full_name || "", bio: "", specialties: "" });
-        }
-      } catch (err) {
-        console.error("Error loading barber profile:", err);
-      }
-
-      // 5. Load user's own shops
-      try {
-        const ownedShops = await db.entities.Shop.filter({ owner_id: user.id });
-        setUserShops(ownedShops);
-      } catch (err) {
-        console.error("Error loading owned shops:", err);
-      }
-
-      setLoading(false);
+    if (user && !clientLoading && !appointmentsLoading && clientList.length === 0 && !createClientMutation.isPending) {
+      createClientMutation.mutate({
+        profile_id: user.id,
+        name: user.full_name || user.email.split("@")[0],
+        email: user.email,
+        total_visits: appointments.filter(a => a.status === "concluido").length,
+        total_spent: appointments.filter(a => a.status === "concluido").reduce((s, a) => s + (a.price || 0), 0),
+      });
     }
-    load();
-  }, [user]);
+  }, [clientLoading, appointmentsLoading, clientList, user, appointments, createClientMutation.isPending]);
+
+  // Sync avatarUrl
+  useEffect(() => {
+    if (profileData?.avatar_url) {
+      setAvatarUrl(profileData.avatar_url);
+    } else if (user?.avatar_url) {
+      setAvatarUrl(user.avatar_url);
+    } else {
+      setAvatarUrl("");
+    }
+  }, [profileData, user]);
+
+  // Sync CPF Info
+  useEffect(() => {
+    if (profileData?.cpf_last4) {
+      setCpfInput('***.***.*' + profileData.cpf_last4.slice(0, 1) + '*-' + profileData.cpf_last4.slice(-2));
+      setCpfSaved(true);
+    } else {
+      setCpfInput("");
+      setCpfSaved(false);
+    }
+  }, [profileData]);
+
+  // Sync client form
+  useEffect(() => {
+    if (client && !editing) {
+      setForm(client);
+    }
+  }, [client, editing]);
+
+  // Sync barber form
+  useEffect(() => {
+    if (barberProfile) {
+      setBarberForm({
+        name: barberProfile.name || "",
+        bio: barberProfile.bio || "",
+        specialties: barberProfile.specialties ? barberProfile.specialties.join(", ") : ""
+      });
+    } else if (user) {
+      setBarberForm(prev => ({
+        ...prev,
+        name: prev.name || user.full_name || ""
+      }));
+    }
+  }, [barberProfile, user]);
+
+  // Derived barber history (enriched with shop name)
+  const barberHistory = barberHistoryData.map(h => {
+    const shop = availableShops.find(s => s.id === h.shop_id);
+    return { ...h, shop_name: shop?.name || 'Barbearia desconhecida' };
+  });
+
+  // Mutations
+  const saveProfileMutation = useMutation({
+    mutationFn: async ({ clientId, clientData, profileId, profileData }) => {
+      // 1. Update Client
+      const updatedClient = await db.entities.Client.update(clientId, clientData);
+
+      // 2. Update profiles table
+      const { error } = await supabase.from('profiles').update(profileData).eq('id', profileId);
+      if (error) {
+        if (error.message?.includes('unique') || error.message?.includes('duplicate') || error.code === '23505') {
+          throw new Error("Este CPF já está vinculado a outra conta.");
+        }
+        throw error;
+      }
+      return updatedClient;
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['Client'] });
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+
+      if (variables.cpfIsNew) {
+        const last4 = getLast4Digits(variables.cpfCleaned);
+        setCpfInput('***.***.*' + last4.slice(0, 1) + '*-' + last4.slice(-2));
+        setCpfSaved(true);
+      }
+
+      setEditing(false);
+      toast.success("Perfil atualizado!");
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(err.message || "Erro ao salvar perfil");
+    }
+  });
 
   async function saveProfile() {
     // Validate CPF if it was changed (not masked)
@@ -161,79 +235,65 @@ export default function Profile() {
       return;
     }
 
+    if (cpfIsNew && cpfCleaned.length < 11) {
+      toast.error('CPF incompleto. Informe todos os 11 dígitos.');
+      return;
+    }
+
     if (cpfIsNew && !validateCPF(cpfCleaned)) {
       toast.error("CPF inválido. Verifique o número informado.");
       return;
     }
 
-    setSaving(true);
-    try {
-      const updated = await db.entities.Client.update(client.id, form);
-      setClient(updated);
-      setForm(updated);
+    // Build profile update payload
+    const profileUpdate = {
+      full_name: form.name,
+      phone: form.phone
+    };
 
-      // Build profile update payload
-      const profileUpdate = {
-        full_name: form.name,
-        phone: form.phone
-      };
-
-      // Save CPF if user typed a new one
-      if (cpfIsNew) {
-        const hash = await hashDocument(cpfCleaned);
-        const last4 = getLast4Digits(cpfCleaned);
-        profileUpdate.cpf_hash = hash;
-        profileUpdate.cpf_last4 = last4;
-        profileUpdate.lgpd_consent = true;
-        profileUpdate.lgpd_consent_date = new Date().toISOString();
-      }
-
-      const { error } = await supabase.from('profiles').update(profileUpdate).eq('id', user.id);
-      if (error) {
-        if (error.message?.includes('unique') || error.message?.includes('duplicate') || error.code === '23505') {
-          toast.error("Este CPF já está vinculado a outra conta.");
-          return;
-        }
-        throw error;
-      }
-
-      if (cpfIsNew) {
-        const last4 = getLast4Digits(cpfCleaned);
-        setCpfInput('***.***.*' + last4.slice(0, 1) + '*-' + last4.slice(-2));
-        setCpfSaved(true);
-      }
-
-      setEditing(false);
-      toast.success("Perfil atualizado!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao salvar perfil");
-    } finally {
-      setSaving(false);
+    // Save CPF if user typed a new one
+    if (cpfIsNew) {
+      const hash = await hashDocument(cpfCleaned);
+      const last4 = getLast4Digits(cpfCleaned);
+      profileUpdate.cpf_hash = hash;
+      profileUpdate.cpf_last4 = last4;
+      profileUpdate.lgpd_consent = true;
+      profileUpdate.lgpd_consent_date = new Date().toISOString();
     }
+
+    saveProfileMutation.mutate({
+      clientId: client.id,
+      clientData: form,
+      profileId: user.id,
+      profileData: profileUpdate,
+      cpfIsNew,
+      cpfCleaned
+    });
   }
+
+  const createBarberMutation = useEntityCreate('Barber');
 
   async function handleCreateBarber(e) {
     e.preventDefault();
-    setBarberLoading(true);
-    try {
-      const created = await db.entities.Barber.create({
-        profile_id: user.id,
-        owner_email: user.email,
-        name: barberForm.name || user.full_name || "Barbeiro",
-        bio: barberForm.bio || "",
-        specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()) : [],
-        is_active: false
-      });
-      setBarberProfile(created);
-      toast.success("Perfil de barbeiro criado com sucesso!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao criar perfil de barbeiro.");
-    } finally {
-      setBarberLoading(false);
-    }
+    createBarberMutation.mutate({
+      profile_id: user.id,
+      owner_email: user.email,
+      name: barberForm.name || user.full_name || "Barbeiro",
+      bio: barberForm.bio || "",
+      specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()) : [],
+      is_active: false
+    }, {
+      onSuccess: () => {
+        toast.success("Perfil de barbeiro criado com sucesso!");
+      },
+      onError: (err) => {
+        console.error(err);
+        toast.error("Erro ao criar perfil de barbeiro.");
+      }
+    });
   }
+
+  const requestLinkMutation = useEntityCreate('BarberLinkRequest');
 
   async function handleRequestLink(e) {
     e.preventDefault();
@@ -241,28 +301,25 @@ export default function Profile() {
       toast.error("Por favor, selecione uma barbearia.");
       return;
     }
-    setBarberLoading(true);
-    try {
-      const req = await db.entities.BarberLinkRequest.create({
-        shop_id: selectedShopId,
-        profile_id: user.id,
-        barber_id: barberProfile.id,
-        status: "pending"
-      });
-      setLinkRequest(req);
-      toast.success("Solicitação de vínculo enviada!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao enviar solicitação.");
-    } finally {
-      setBarberLoading(false);
-    }
+    requestLinkMutation.mutate({
+      shop_id: selectedShopId,
+      profile_id: user.id,
+      barber_id: barberProfile.id,
+      status: "pending"
+    }, {
+      onSuccess: () => {
+        toast.success("Solicitação de vínculo enviada!");
+      },
+      onError: (err) => {
+        console.error(err);
+        toast.error("Erro ao enviar solicitação.");
+      }
+    });
   }
 
-  async function handleUnlinkBarber() {
-    if (!barberProfile || !barberProfile.shop_id) return;
-    setBarberLoading(true);
-    try {
+  const unlinkBarberMutation = useMutation({
+    mutationFn: async () => {
+      if (!barberProfile || !barberProfile.shop_id) return;
       const oldShopId = barberProfile.shop_id;
       // 1. Update barber's shop_id to null
       await db.entities.Barber.update(barberProfile.id, { shop_id: null });
@@ -282,23 +339,28 @@ export default function Profile() {
         action: 'unlinked',
         notes: 'Desvinculado pelo próprio profissional.'
       });
-
-      // 4. Update local state
-      setBarberProfile(prev => ({ ...prev, shop_id: null }));
-      setLinkRequest(null);
-      
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['Barber'] });
+      queryClient.invalidateQueries({ queryKey: ['BarberLinkRequest'] });
+      queryClient.invalidateQueries({ queryKey: ['BarberLinkHistory'] });
       toast.success("Desvinculado da barbearia com sucesso!");
-    } catch (err) {
+    },
+    onError: (err) => {
       console.error(err);
       toast.error("Erro ao se desvincular da barbearia.");
-    } finally {
-      setBarberLoading(false);
     }
+  });
+
+  async function handleUnlinkBarber() {
+    unlinkBarberMutation.mutate();
   }
+
+  const createShopMutation = useEntityCreate('Shop');
 
   async function handleCreateShop(e) {
     e.preventDefault();
-    if (!shopForm.name || !shopForm.address || !shopForm.phone) {
+    if (!shopForm.name || !shopForm.razao_social || !shopForm.phone || !shopForm.cnpj || !shopForm.cep || !shopForm.street || !shopForm.number || !shopForm.neighborhood || !shopForm.city || !shopForm.state) {
       toast.error("Por favor, preencha todos os campos obrigatórios.");
       return;
     }
@@ -307,67 +369,122 @@ export default function Profile() {
       toast.error("Você já possui uma barbearia cadastrada. Apenas uma por conta.");
       return;
     }
-    // Validar CNPJ/CPF (se informado)
-    if (shopForm.cnpj) {
-      const cleanedDoc = shopForm.cnpj.replace(/\D/g, '');
-      if (cleanedDoc.length === 14 && !validateCNPJ(cleanedDoc)) {
-        toast.error("CNPJ inválido. Verifique o número informado.");
-        return;
-      } else if (cleanedDoc.length === 11 && !validateCPF(cleanedDoc)) {
-        toast.error("CPF inválido. Verifique o número informado.");
-        return;
-      } else if (cleanedDoc.length > 0 && cleanedDoc.length !== 11 && cleanedDoc.length !== 14) {
-        toast.error("Informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido.");
-        return;
-      }
+    // Validar CNPJ
+    const cleanedCNPJ = shopForm.cnpj.replace(/\D/g, '');
+    if (cleanedCNPJ.length !== 14 || !validateCNPJ(cleanedCNPJ)) {
+      toast.error("CNPJ inválido. Informe um CNPJ válido de 14 dígitos.");
+      return;
     }
-    setShopLoading(true);
-    try {
-      const slug = shopForm.name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now().toString().slice(-4);
-      const workingHours = {
-        monday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
-        tuesday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
-        wednesday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
-        thursday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
-        friday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
-        saturday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
-        sunday: { start: shopForm.startTime, end: shopForm.endTime, active: false }
-      };
 
-      let cnpjData = {};
-      if (shopForm.cnpj) {
-        const cleanedDoc = shopForm.cnpj.replace(/\D/g, '');
-        cnpjData = {
-          cnpj_hash: await hashDocument(cleanedDoc),
-          cnpj_last4: getLast4Digits(cleanedDoc)
-        };
+    const slug = shopForm.name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now().toString().slice(-4);
+    const workingHours = {
+      monday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+      tuesday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+      wednesday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+      thursday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+      friday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+      saturday: { start: shopForm.startTime, end: shopForm.endTime, active: true },
+      sunday: { start: shopForm.startTime, end: shopForm.endTime, active: false }
+    };
+
+    const cnpjHash = await hashDocument(cleanedCNPJ);
+    const cnpjLast4 = getLast4Digits(cleanedCNPJ);
+    
+    const fullAddress = `${shopForm.street}, ${shopForm.number}${shopForm.complement ? ` - ${shopForm.complement}` : ''} - ${shopForm.neighborhood}, ${shopForm.city} - ${shopForm.state}, CEP: ${shopForm.cep}`;
+
+    createShopMutation.mutate({
+      owner_id: user.id,
+      owner_email: user.email,
+      name: shopForm.name,
+      razao_social: shopForm.razao_social,
+      address: fullAddress,
+      phone: shopForm.phone,
+      whatsapp: shopForm.whatsapp || shopForm.phone,
+      neighborhood: shopForm.neighborhood,
+      city: shopForm.city,
+      slug: slug,
+      working_hours: workingHours,
+      is_active: true,
+      cnpj_hash: cnpjHash,
+      cnpj_last4: cnpjLast4
+    }, {
+      onSuccess: () => {
+        toast.success("Barbearia criada! Você agora é administrador.");
+        setTimeout(() => {
+          window.location.href = "/admin";
+        }, 1500);
+      },
+      onError: (err) => {
+        console.error(err);
+        toast.error("Erro ao criar barbearia.");
       }
+    });
+  }
 
-      await db.entities.Shop.create({
-        owner_id: user.id,
-        owner_email: user.email,
-        name: shopForm.name,
-        address: shopForm.address,
-        phone: shopForm.phone,
-        slug: slug,
-        working_hours: workingHours,
-        is_active: true,
-        ...cnpjData
-      });
+  const saving = saveProfileMutation.isPending;
+  const barberLoading = createBarberMutation.isPending || requestLinkMutation.isPending || unlinkBarberMutation.isPending;
+  const shopLoading = createShopMutation.isPending;
+  const loading = !user || profileLoading || clientLoading || appointmentsLoading || availableShopsLoading || barberQueryLoading || clientList.length === 0 || createClientMutation.isPending;
 
-      toast.success("Barbearia criada! Você agora é administrador.");
-      setTimeout(() => {
-        window.location.href = "/admin";
-      }, 1500);
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao criar barbearia.");
-    } finally {
-      setShopLoading(false);
+  function setF(key, val) { setForm(f => ({ ...f, [key]: val })); }
+
+  async function handleCepChange(value) {
+    const formatted = formatCEP(value);
+    setF('cep', formatted);
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 8 && validateCEP(clean)) {
+      setCepLoading(true);
+      try {
+        const address = await fetchAddressByCEP(clean);
+        if (address) {
+          setForm(f => ({
+            ...f,
+            cep: formatted,
+            street: address.logradouro || f.street || '',
+            neighborhood: address.bairro || f.neighborhood || '',
+            city: address.localidade || f.city || '',
+            state: address.uf || f.state || '',
+          }));
+          toast.success('Endereço encontrado!');
+        } else {
+          toast.error('CEP não encontrado. Preencha manualmente.');
+        }
+      } catch {
+        toast.error('Erro ao buscar CEP. Preencha manualmente.');
+      } finally {
+        setCepLoading(false);
+      }
     }
   }
 
-  function setF(key, val) { setForm(f => ({ ...f, [key]: val })); }
+  async function handleShopCepChange(value) {
+    const formatted = formatCEP(value);
+    setShopForm(f => ({ ...f, cep: formatted }));
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 8 && validateCEP(clean)) {
+      setShopCepLoading(true);
+      try {
+        const address = await fetchAddressByCEP(clean);
+        if (address) {
+          setShopForm(f => ({
+            ...f,
+            cep: formatted,
+            street: address.logradouro || f.street || '',
+            neighborhood: address.bairro || f.neighborhood || '',
+            city: address.localidade || f.city || '',
+            state: address.uf || f.state || '',
+          }));
+          toast.success('Endereço da barbearia encontrado!');
+        } else {
+          toast.error('CEP não encontrado. Preencha manualmente.');
+        }
+      } catch {
+        toast.error('Erro ao buscar CEP. Preencha manualmente.');
+      } finally {
+        setShopCepLoading(false);
+      }
+    }
+  }
 
   const completed = appointments.filter(a => a.status === "concluido");
   const totalSpent = completed.reduce((s, a) => s + (a.price || 0), 0);
@@ -574,7 +691,19 @@ export default function Profile() {
 
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">CEP</Label>
-            <Input value={form.cep || ""} onChange={e => setF("cep", e.target.value)} disabled={!editing} placeholder="00000-000" className="bg-muted/20 border-border/40 disabled:opacity-70" maxLength={9} />
+            <div className="relative">
+              <Input 
+                value={form.cep || ""} 
+                onChange={e => handleCepChange(e.target.value)} 
+                disabled={!editing} 
+                placeholder="00000-000" 
+                className="bg-muted/20 border-border/40 disabled:opacity-70" 
+                maxLength={9} 
+              />
+              {cepLoading && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
@@ -602,7 +731,20 @@ export default function Profile() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Estado</Label>
-            <Input value={form.state || ""} onChange={e => setF("state", e.target.value)} disabled={!editing} placeholder="SP" className="bg-muted/20 border-border/40 disabled:opacity-70" maxLength={2} />
+            {editing ? (
+              <Select value={form.state || ''} onValueChange={(val) => setF('state', val)} disabled={!editing}>
+                <SelectTrigger className="bg-muted/20 border-border/40">
+                  <SelectValue placeholder="Selecione o estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BRAZILIAN_STATES.map(s => (
+                    <SelectItem key={s.value} value={s.value}>{s.value} — {s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={form.state || ''} disabled placeholder="UF" className="bg-muted/20 border-border/40 disabled:opacity-70" />
+            )}
           </div>
 
           {editing && (
@@ -738,25 +880,94 @@ export default function Profile() {
 
                 <form onSubmit={handleCreateShop} className="space-y-3">
                   <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">Nome da Barbearia</Label>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Nome Fantasia *</Label>
                     <Input value={shopForm.name} onChange={e => setShopForm({ ...shopForm, name: e.target.value })} required placeholder="Ex: Barbearia Premium" className="h-9 text-xs" />
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">Endereço Completo</Label>
-                    <Input value={shopForm.address} onChange={e => setShopForm({ ...shopForm, address: e.target.value })} required placeholder="Ex: Av. Paulista, 1000 - São Paulo" className="h-9 text-xs" />
+                    <Label className="text-xs text-muted-foreground mb-1 block">Razão Social *</Label>
+                    <Input value={shopForm.razao_social} onChange={e => setShopForm({ ...shopForm, razao_social: e.target.value })} required placeholder="Ex: Premium Barber LTDA" className="h-9 text-xs" />
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">Telefone Comercial</Label>
-                    <Input value={shopForm.phone} onChange={e => setShopForm({ ...shopForm, phone: e.target.value })} required placeholder="(11) 99999-9999" className="h-9 text-xs" />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1 block">CNPJ ou CPF do Responsável</Label>
+                    <Label className="text-xs text-muted-foreground mb-1 block">CNPJ *</Label>
                     <Input value={shopForm.cnpj} onChange={e => {
                       const v = e.target.value.replace(/\D/g, '');
-                      setShopForm({ ...shopForm, cnpj: v.length <= 11 ? formatCPF(v) : formatCNPJ(v) });
-                    }} placeholder="00.000.000/0000-00" className="h-9 text-xs font-mono" maxLength={18} />
-                    <p className="text-[10px] text-muted-foreground mt-1">Opcional. Previne duplicidade. Aceita CPF para MEI.</p>
+                      setShopForm({ ...shopForm, cnpj: formatCNPJ(v) });
+                    }} placeholder="00.000.000/0000-00" className="h-9 text-xs font-mono" required maxLength={18} />
                   </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Telefone Comercial *</Label>
+                      <Input value={shopForm.phone} onChange={e => setShopForm({ ...shopForm, phone: e.target.value })} required placeholder="(11) 99999-9999" className="h-9 text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">WhatsApp (Opcional)</Label>
+                      <Input value={shopForm.whatsapp} onChange={e => setShopForm({ ...shopForm, whatsapp: e.target.value })} placeholder="Mesmo que o telefone" className="h-9 text-xs" />
+                    </div>
+                  </div>
+
+                  {/* Endereço Expandido com CEP inteligente */}
+                  <div className="p-3.5 rounded-xl border border-border bg-muted/20 space-y-2.5">
+                    <p className="text-xs font-semibold text-foreground">Endereço da Barbearia</p>
+                    
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">CEP *</Label>
+                      <div className="relative">
+                        <Input 
+                          value={shopForm.cep || ""} 
+                          onChange={e => handleShopCepChange(e.target.value)} 
+                          required
+                          placeholder="00000-000" 
+                          className="h-9 text-xs" 
+                          maxLength={9} 
+                        />
+                        {shopCepLoading && (
+                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <Label className="text-xs text-muted-foreground mb-1 block">Rua *</Label>
+                        <Input value={shopForm.street || ""} onChange={e => setShopForm({ ...shopForm, street: e.target.value })} required className="h-9 text-xs" />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Número *</Label>
+                        <Input value={shopForm.number || ""} onChange={e => setShopForm({ ...shopForm, number: e.target.value })} required className="h-9 text-xs" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Complemento</Label>
+                      <Input value={shopForm.complement || ""} onChange={e => setShopForm({ ...shopForm, complement: e.target.value })} className="h-9 text-xs" placeholder="Ex: Sala 42" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Bairro *</Label>
+                        <Input value={shopForm.neighborhood || ""} onChange={e => setShopForm({ ...shopForm, neighborhood: e.target.value })} required className="h-9 text-xs" />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Cidade *</Label>
+                        <Input value={shopForm.city || ""} onChange={e => setShopForm({ ...shopForm, city: e.target.value })} required className="h-9 text-xs" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Estado *</Label>
+                      <Select value={shopForm.state || ''} onValueChange={(val) => setShopForm(f => ({ ...f, state: val }))}>
+                        <SelectTrigger className="h-9 text-xs bg-muted/20 border-border/40">
+                          <SelectValue placeholder="Selecione o estado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BRAZILIAN_STATES.map(s => (
+                            <SelectItem key={s.value} value={s.value}>{s.value} — {s.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1 block">Abre às</Label>

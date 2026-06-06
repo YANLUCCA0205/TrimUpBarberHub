@@ -6,14 +6,15 @@ import { getSimulation } from "@/lib/simulation";
 import SimulationBanner from "./SimulationBanner";
 import NotificationBell from "./NotificationBell";
 import { useAuth } from "@/lib/AuthContext";
-import { Home, Calendar, ShoppingBag, BarChart3, User, Scissors, LogOut, Menu, X, LayoutDashboard } from "lucide-react";
+import { Home, Calendar, BarChart3, User, Scissors, LogOut, Menu, X, LayoutDashboard } from "lucide-react";
 import { useState } from "react";
+import { useEntityQuery } from '@/hooks/useSupabaseQuery';
+import ProfileCompletionBar from './ProfileCompletionBar';
 
 const clientNav = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Meu Painel" },
-  { to: "/explore", icon: Home, label: "Barbearias" },
+  { to: "/explore", icon: Home, label: "Explorar" },
   { to: "/booking", icon: Calendar, label: "Agendar" },
-  { to: "/marketplace", icon: ShoppingBag, label: "Produtos" },
   { to: "/profile", icon: User, label: "Perfil" },
 ];
 
@@ -31,6 +32,9 @@ export default function Layout() {
   const effectiveRole = simulation?.active ? simulation.role : user?.role;
   
   const navItems = [...(effectiveRole === "barber" ? barberNav : clientNav)];
+  
+  const { data: clients = [] } = useEntityQuery('Client', user?.email ? { email: user.email } : {}, { enabled: !!user?.email });
+  const client = clients[0] || null;
 
   // Dynamically show panels if user has appropriate roles and simulation is not active
   if (!simulation?.active) {
@@ -145,6 +149,11 @@ export default function Layout() {
       {/* Main Content */}
       <main className="flex-1 lg:ml-64 pt-16 pb-20 lg:pt-0 lg:pb-0">
         {simulation?.active && <SimulationBanner role={simulation.role} />}
+        {user && (
+          <div className="max-w-7xl mx-auto px-4 pt-6 lg:px-8">
+            <ProfileCompletionBar profile={user} client={client} />
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={pathname}

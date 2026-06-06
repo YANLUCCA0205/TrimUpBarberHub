@@ -1,6 +1,6 @@
-import db from '@/lib/db';
+import { useEntityQuery } from '@/hooks/useSupabaseQuery';
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 import { ShoppingBag, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -10,19 +10,9 @@ import { toast } from "sonner";
 const categories = ["Todos", "pomada", "óleo", "perfume", "shampoo", "condicionador", "máquina", "acessório", "kit"];
 
 export default function Marketplace() {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: products = [], isLoading: loading } = useEntityQuery('Product', {});
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Todos");
-
-  useEffect(() => {
-    async function load() {
-      const p = await db.entities.Product.list("-created_at");
-      setProducts(p);
-      setLoading(false);
-    }
-    load();
-  }, []);
 
   const filtered = products.filter(p => {
     const matchSearch = !search || p.name?.toLowerCase().includes(search.toLowerCase());

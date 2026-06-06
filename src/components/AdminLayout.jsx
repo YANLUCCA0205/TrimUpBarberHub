@@ -63,8 +63,8 @@ export default function AdminLayout() {
 
         {/* Footer */}
         <div className="p-4 border-t border-border/50 space-y-1">
-          <Link to="/explore" className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all">
-            <Store className="w-3.5 h-3.5" /> Ver marketplace
+          <Link to="/dashboard" className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all">
+            <Store className="w-3.5 h-3.5" /> Modo Cliente
           </Link>
           <button
             onClick={() => db.auth.logout()}

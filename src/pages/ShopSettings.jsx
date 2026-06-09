@@ -180,10 +180,31 @@ export default function ShopSettings() {
 
   // Barber CRUD
   async function saveBarber() {
-    if (!barberForm.name) {
+    if (!barberForm.name?.trim()) {
       toast.error("Informe o nome do barbeiro.");
       return;
     }
+    if (!barberForm.photo) {
+      toast.error("Informe a foto do barbeiro.");
+      return;
+    }
+    if (!barberForm.bio?.trim()) {
+      toast.error("Preencha a biografia (Quem sou eu / Bio) do barbeiro.");
+      return;
+    }
+    if (!barberForm.career?.trim()) {
+      toast.error("Preencha a trajetória de carreira e experiência do barbeiro.");
+      return;
+    }
+    if (!barberForm.whatsapp?.trim()) {
+      toast.error("Informe o número de WhatsApp do barbeiro.");
+      return;
+    }
+    if (!barberForm.specialties || barberForm.specialties.length === 0) {
+      toast.error("Informe ao menos uma especialidade para o barbeiro.");
+      return;
+    }
+
     try {
       if (editingBarber) {
         const updated = await db.entities.Barber.update(editingBarber.id, barberForm);
@@ -581,27 +602,27 @@ export default function ShopSettings() {
                     value={barberForm.photo}
                     onChange={(url) => setBarberForm(prev => ({ ...prev, photo: url }))}
                     onRemove={() => setBarberForm(prev => ({ ...prev, photo: '' }))}
-                    label="Foto do Barbeiro"
+                    label="Foto do Barbeiro *"
                     aspect="square"
                     maxSizeMB={5}
                   />
                 </div>
               </div>
-              <Field label="Quem sou eu / Bio">
+              <Field label="Quem sou eu / Bio *">
                 <Textarea value={barberForm.bio || ""} onChange={e => setBarberForm(f => ({ ...f, bio: e.target.value }))} rows={3} placeholder="Apresentação do barbeiro, personalidade, estilo..." className="bg-muted border-border/50 rounded-xl resize-none" />
               </Field>
-              <Field label="Carreira e Experiência">
+              <Field label="Carreira e Experiência *">
                 <Textarea value={barberForm.career || ""} onChange={e => setBarberForm(f => ({ ...f, career: e.target.value }))} rows={3} placeholder="Trajetória profissional, formações, conquistas..." className="bg-muted border-border/50 rounded-xl resize-none" />
               </Field>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="WhatsApp">
+                <Field label="WhatsApp *">
                   <Input value={barberForm.whatsapp || ""} onChange={e => setBarberForm(f => ({ ...f, whatsapp: e.target.value }))} placeholder="5511999999999" className="bg-muted border-border/50 rounded-xl" />
                 </Field>
-                <Field label="Instagram">
+                <Field label="Instagram (Opcional)">
                   <Input value={barberForm.instagram || ""} onChange={e => setBarberForm(f => ({ ...f, instagram: e.target.value }))} placeholder="@barbeiro" className="bg-muted border-border/50 rounded-xl" />
                 </Field>
               </div>
-              <Field label="Especialidades (separadas por vírgula)">
+              <Field label="Especialidades (separadas por vírgula) *">
                 <Input
                   value={(barberForm.specialties || []).join(", ")}
                   onChange={e => setBarberForm(f => ({ ...f, specialties: e.target.value.split(",").map(x => x.trim()).filter(Boolean) }))}

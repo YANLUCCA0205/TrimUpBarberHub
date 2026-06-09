@@ -1,12 +1,26 @@
 import db from '@/lib/db';
 import { useState, useEffect } from "react";
-import { CreditCard, Plus, Edit2, Trash2, Check, X, ToggleLeft, ToggleRight } from "lucide-react";
+import { CreditCard, Plus, Edit2, Trash2, Check, X, ToggleLeft, ToggleRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AVAILABLE_FEATURES, migrateFeatureStringToId, getFeatureLabel } from '@/utils/planFeatures';
+import { toast } from "sonner";
 
-const EMPTY = { name: "", monthly_price: "", annual_price: "", annual_discount: "", trial_days: 14, max_barbers: "", max_clients: "", max_units: 1, features: [], description: "", is_active: true };
+const EMPTY = { 
+  name: "", 
+  monthly_price: "", 
+  annual_price: "", 
+  annual_discount: "", 
+  trial_days: 14, 
+  max_barbers: "", 
+  max_clients: "", 
+  max_appointments: "", 
+  max_units: 1, 
+  features: [], 
+  description: "", 
+  is_active: true 
+};
 
 export default function SiteOwnerPlanos() {
   const [plans, setPlans] = useState([]);
@@ -14,15 +28,22 @@ export default function SiteOwnerPlanos() {
   const [editing, setEditing] = useState(null); // null | "new" | plan object
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
-    const data = await db.entities.Plan.list("-created_at", 20);
-    setPlans(data);
-    setLoading(false);
+    try {
+      const data = await db.entities.Plan.list("-created_at", 20);
+      setPlans(data);
+    } catch (err) {
+      console.error("Erro ao carregar planos:", err);
+      toast.error("Erro ao carregar planos do banco de dados.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function startNew() {
@@ -32,42 +53,143 @@ export default function SiteOwnerPlanos() {
 
   function startEdit(plan) {
     const migrated = (plan.features || []).map(f => migrateFeatureStringToId(f));
-    setForm({ ...plan, features: migrated });
+    setForm({ 
+      ...plan, 
+      features: migrated,
+      max_appointments: plan.max_appointments !== undefined && plan.max_appointments !== null ? plan.max_appointments : ""
+    });
     setEditing(plan);
   }
 
   async function save() {
     setSaving(true);
-    const monthlyVal = Number(form.monthly_price) || 0;
-    const payload = {
-      ...form,
-      monthly_price: monthlyVal,
-      annual_price: Number(form.annual_price) || (monthlyVal * 12) || 0,
-      annual_discount: Number(form.annual_discount) || 0,
-      trial_days: Number(form.trial_days) || 14,
-      max_barbers: Number(form.max_barbers) || undefined,
-      max_clients: Number(form.max_clients) || undefined,
-      max_units: Number(form.max_units) || 1,
-      features: Array.isArray(form.features) ? form.features : [],
-    };
-    if (editing === "new") {
-      await db.entities.Plan.create(payload);
-    } else {
-      await db.entities.Plan.update(editing.id, payload);
+    try {
+      const monthlyVal = Number(form.monthly_price) || 0;
+      const payload = {
+        ...form,
+        monthly_price: monthlyVal,
+        annual_price: Number(form.annual_price) || (monthlyVal * 12) || 0,
+        annual_discount: Number(form.annual_discount) || 0,
+        trial_days: Number(form.trial_days) || 14,
+        max_barbers: form.max_barbers ? Number(form.max_barbers) : null,
+        max_clients: form.max_clients ? Number(form.max_clients) : null,
+        max_appointments: form.max_appointments ? Number(form.max_appointments) : null,
+        max_units: Number(form.max_units) || 1,
+        features: Array.isArray(form.features) ? form.features : [],
+      };
+      if (editing === "new") {
+        await db.entities.Plan.create(payload);
+        toast.success("Plano criado com sucesso!");
+      } else {
+        await db.entities.Plan.update(editing.id, payload);
+        toast.success("Plano atualizado com sucesso!");
+      }
+      await load();
+      setEditing(null);
+    } catch (err) {
+      console.error("Erro ao salvar plano:", err);
+      toast.error("Erro ao salvar o plano.");
+    } finally {
+      setSaving(false);
     }
-    await load();
-    setEditing(null);
-    setSaving(false);
   }
 
   async function toggleActive(plan) {
-    await db.entities.Plan.update(plan.id, { is_active: !plan.is_active });
-    setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, is_active: !p.is_active } : p));
+    try {
+      await db.entities.Plan.update(plan.id, { is_active: !plan.is_active });
+      setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, is_active: !p.is_active } : p));
+      toast.success(plan.is_active ? "Plano inativado!" : "Plano ativado!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao alterar status do plano.");
+    }
   }
 
   async function deletePlan(id) {
-    await db.entities.Plan.delete(id);
-    setPlans(prev => prev.filter(p => p.id !== id));
+    try {
+      await db.entities.Plan.delete(id);
+      setPlans(prev => prev.filter(p => p.id !== id));
+      toast.success("Plano removido!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao remover o plano.");
+    }
+  }
+
+  async function seedDefaultPlans() {
+    setSeeding(true);
+    try {
+      const defaultPlans = [
+        {
+          name: "Free",
+          description: "Plano gratuito com recursos essenciais para começar",
+          monthly_price: 0,
+          annual_price: 0,
+          annual_discount: 0,
+          trial_days: 0,
+          max_barbers: 1,
+          max_clients: 20,
+          max_appointments: 50,
+          max_units: 1,
+          features: ["agenda_online", "crm_cadastro", "sys_dashboard", "sys_theme"],
+          is_active: true
+        },
+        {
+          name: "Pro",
+          description: "Ideal para barbearias em crescimento",
+          monthly_price: 49.90,
+          annual_price: 499.00,
+          annual_discount: 15,
+          trial_days: 14,
+          max_barbers: 5,
+          max_clients: 200,
+          max_appointments: 500,
+          max_units: 1,
+          features: [
+            "agenda_online", "agenda_reagendamento", "agenda_cancelamento", "agenda_bloqueio", "agenda_personalizada",
+            "crm_cadastro", "crm_historico", "crm_observacoes",
+            "barber_cadastro", "barber_agenda", "barber_horarios",
+            "sys_dashboard", "sys_theme"
+          ],
+          is_active: true
+        },
+        {
+          name: "Premium",
+          description: "Gestão completa e ilimitada para o seu negócio",
+          monthly_price: 99.90,
+          annual_price: 999.00,
+          annual_discount: 20,
+          trial_days: 14,
+          max_barbers: 15,
+          max_clients: 1000,
+          max_appointments: 5000,
+          max_units: 3,
+          features: AVAILABLE_FEATURES.map(f => f.id),
+          is_active: true
+        }
+      ];
+
+      let seededCount = 0;
+      for (const plan of defaultPlans) {
+        const exists = plans.find(p => p.name.toLowerCase() === plan.name.toLowerCase());
+        if (!exists) {
+          await db.entities.Plan.create(plan);
+          seededCount++;
+        }
+      }
+      
+      if (seededCount > 0) {
+        toast.success(`${seededCount} plano(s) padrão semeado(s) com sucesso!`);
+      } else {
+        toast.info("Todos os planos padrão já existem no banco.");
+      }
+      await load();
+    } catch (err) {
+      console.error("Erro ao semear planos padrão:", err);
+      toast.error("Erro ao semear planos: " + (err.message || "tente novamente."));
+    } finally {
+      setSeeding(false);
+    }
   }
 
   if (loading) return (
@@ -78,12 +200,22 @@ export default function SiteOwnerPlanos() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><CreditCard className="w-6 h-6 text-primary" /> Planos</h1>
           <p className="text-sm text-muted-foreground mt-1">Gerencie os planos disponíveis na plataforma</p>
         </div>
-        <Button onClick={startNew} className="gap-2"><Plus className="w-4 h-4" /> Novo Plano</Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={seedDefaultPlans} 
+            variant="outline" 
+            disabled={seeding} 
+            className="gap-2 border-primary/20 hover:bg-primary/10 rounded-xl text-xs h-10"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-primary" /> Semear Planos Padrão
+          </Button>
+          <Button onClick={startNew} className="gap-2 rounded-xl text-xs h-10"><Plus className="w-4 h-4" /> Novo Plano</Button>
+        </div>
       </div>
 
       {/* Form */}
@@ -99,6 +231,7 @@ export default function SiteOwnerPlanos() {
               { key: "trial_days", label: "Dias de Teste", placeholder: "14", type: "number" },
               { key: "max_barbers", label: "Limite Barbeiros", placeholder: "5", type: "number" },
               { key: "max_clients", label: "Limite Clientes", placeholder: "500", type: "number" },
+              { key: "max_appointments", label: "Limite Agendamentos Mensais", placeholder: "500", type: "number" },
               { key: "max_units", label: "Limite Unidades", placeholder: "1", type: "number" },
             ].map(f => (
               <div key={f.key}>
@@ -152,8 +285,8 @@ export default function SiteOwnerPlanos() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <Button onClick={save} disabled={saving} className="gap-1"><Check className="w-4 h-4" />{saving ? "Salvando..." : "Salvar"}</Button>
-            <Button variant="outline" onClick={() => setEditing(null)} className="gap-1"><X className="w-4 h-4" /> Cancelar</Button>
+            <Button onClick={save} disabled={saving} className="gap-1 rounded-xl"><Check className="w-4 h-4" />{saving ? "Salvando..." : "Salvar"}</Button>
+            <Button variant="outline" onClick={() => setEditing(null)} className="gap-1 rounded-xl"><X className="w-4 h-4" /> Cancelar</Button>
           </div>
         </div>
       )}
@@ -175,11 +308,12 @@ export default function SiteOwnerPlanos() {
             <div className="space-y-1 mb-4">
               {plan.max_barbers && <p className="text-xs text-muted-foreground">· Até {plan.max_barbers} barbeiros</p>}
               {plan.max_clients && <p className="text-xs text-muted-foreground">· Até {plan.max_clients} clientes</p>}
+              {plan.max_appointments && <p className="text-xs text-muted-foreground">· Até {plan.max_appointments} agendamentos/mês</p>}
               {plan.trial_days && <p className="text-xs text-muted-foreground">· {plan.trial_days} dias grátis</p>}
               {(plan.features || []).map((f, i) => <p key={i} className="text-xs text-muted-foreground">· {getFeatureLabel(f)}</p>)}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => startEdit(plan)} className="flex-1 h-8 text-xs gap-1">
+              <Button variant="outline" size="sm" onClick={() => startEdit(plan)} className="flex-1 h-8 text-xs gap-1 rounded-lg">
                 <Edit2 className="w-3 h-3" /> Editar
               </Button>
               <button onClick={() => toggleActive(plan)} className="p-2 rounded-lg hover:bg-muted/50 transition-all">
@@ -192,10 +326,15 @@ export default function SiteOwnerPlanos() {
           </div>
         ))}
         {plans.length === 0 && !editing && (
-          <div className="md:col-span-3 text-center py-16 text-muted-foreground">
-            <CreditCard className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p className="mb-3">Nenhum plano criado ainda.</p>
-            <Button onClick={startNew} size="sm"><Plus className="w-4 h-4 mr-1" /> Criar primeiro plano</Button>
+          <div className="md:col-span-3 text-center py-16 text-muted-foreground bg-card/40 border border-border/40 rounded-2xl p-6">
+            <CreditCard className="w-10 h-10 mx-auto mb-3 opacity-20 text-primary" />
+            <p className="mb-3">Nenhum plano criado ainda no banco de dados.</p>
+            <div className="flex justify-center gap-3">
+              <Button onClick={startNew} size="sm" className="rounded-xl"><Plus className="w-4 h-4 mr-1" /> Criar primeiro plano</Button>
+              <Button onClick={seedDefaultPlans} size="sm" variant="outline" disabled={seeding} className="gap-2 border-primary/20 hover:bg-primary/10 rounded-xl">
+                <Sparkles className="w-3.5 h-3.5 text-primary" /> Semear Planos Padrão
+              </Button>
+            </div>
           </div>
         )}
       </div>

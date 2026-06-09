@@ -147,6 +147,19 @@ const createEntityHandler = (entityName) => {
      * @param {Record<string, any>} data
      */
     create: async (data = {}) => {
+      if (tableName === 'barbers') {
+        const required = ['name', 'photo', 'bio', 'career', 'whatsapp', 'specialties'];
+        const missing = [];
+        for (const field of required) {
+          const val = data[field];
+          if (!val || (Array.isArray(val) && val.length === 0) || (typeof val === 'string' && !val.trim())) {
+            missing.push(field);
+          }
+        }
+        if (missing.length > 0) {
+          throw new Error(`Campos obrigatórios ausentes no perfil do barbeiro: ${missing.join(', ')}`);
+        }
+      }
       // Map owner_email to owner_id if it's in the creation payload
       const payload = { ...data };
       if (payload.owner_email && tableName === 'shops') {
@@ -183,6 +196,21 @@ const createEntityHandler = (entityName) => {
      * @param {Record<string, any>} data
      */
     update: async (id, data = {}) => {
+      if (tableName === 'barbers') {
+        const fieldsToCheck = ['name', 'photo', 'bio', 'career', 'whatsapp', 'specialties'];
+        const invalidFields = [];
+        for (const field of fieldsToCheck) {
+          if (field in data) {
+            const val = data[field];
+            if (!val || (Array.isArray(val) && val.length === 0) || (typeof val === 'string' && !val.trim())) {
+              invalidFields.push(field);
+            }
+          }
+        }
+        if (invalidFields.length > 0) {
+          throw new Error(`Campos obrigatórios não podem ficar em branco no perfil do barbeiro: ${invalidFields.join(', ')}`);
+        }
+      }
       // Prevent updating the primary key if it's in data
       const updateData = { ...data };
       delete updateData.id;

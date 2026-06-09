@@ -12,7 +12,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEntityQuery, useEntityGet, useEntityCreate } from "@/hooks/useSupabaseQuery";
 
 import ImageUpload from '../components/ImageUpload';
-import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2, Shield, Loader2 } from "lucide-react";
+import { User, Calendar, Save, LogOut, MapPin, Edit2, Trash2, Shield, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,7 @@ const STATUS_COLORS = {
 };
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
   const isCpfRequired = user?.role && user.role !== 'user';
 
@@ -63,6 +63,9 @@ export default function Profile() {
   const [cpfSaved, setCpfSaved] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [shopCepLoading, setShopCepLoading] = useState(false);
+  const [showCancelBarberModal, setShowCancelBarberModal] = useState(false);
+  const [cancelConsent, setCancelConsent] = useState(false);
+  const [cancelingBarber, setCancelingBarber] = useState(false);
 
   // Queries
   // 1. Profile Data from profiles table
@@ -274,24 +277,53 @@ export default function Profile() {
 
   async function handleCreateBarber(e) {
     e.preventDefault();
+
+    if (!barberForm.name?.trim()) {
+      toast.error("Por favor, preencha o Nome Profissional.");
+      return;
+    }
+    if (!barberForm.photo) {
+      toast.error("Por favor, envie sua Foto Profissional.");
+      return;
+    }
+    if (!barberForm.bio?.trim()) {
+      toast.error("Por favor, preencha o campo Quem sou eu / Bio.");
+      return;
+    }
+    if (!barberForm.career?.trim()) {
+      toast.error("Por favor, preencha o campo Carreira e Experiência.");
+      return;
+    }
+    if (!barberForm.whatsapp?.trim()) {
+      toast.error("Por favor, insira seu número de WhatsApp.");
+      return;
+    }
+    const specs = barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()).filter(Boolean) : [];
+    if (specs.length === 0) {
+      toast.error("Por favor, informe ao menos uma Especialidade.");
+      return;
+    }
+
     createBarberMutation.mutate({
       profile_id: user.id,
       owner_email: user.email,
-      name: barberForm.name || user.full_name || "Barbeiro",
-      photo: barberForm.photo || "",
-      bio: barberForm.bio || "",
-      career: barberForm.career || "",
-      whatsapp: barberForm.whatsapp || "",
-      instagram: barberForm.instagram || "",
-      specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()).filter(Boolean) : [],
+      name: barberForm.name.trim(),
+      photo: barberForm.photo,
+      bio: barberForm.bio.trim(),
+      career: barberForm.career.trim(),
+      whatsapp: barberForm.whatsapp.trim(),
+      instagram: barberForm.instagram?.trim() || "",
+      specialties: specs,
       is_active: false
     }, {
-      onSuccess: () => {
+      onSuccess: async () => {
         toast.success("Perfil de barbeiro criado com sucesso!");
+        await refreshProfile();
+        queryClient.invalidateQueries({ queryKey: ['Barber'] });
       },
       onError: (err) => {
         console.error(err);
-        toast.error("Erro ao criar perfil de barbeiro.");
+        toast.error("Erro ao criar perfil de barbeiro: " + (err.message || ""));
       }
     });
   }
@@ -357,6 +389,47 @@ export default function Profile() {
 
   async function handleUnlinkBarber() {
     unlinkBarberMutation.mutate();
+  }
+
+  function handleStartCancelBarber() {
+    if (!barberProfile) return;
+    if (barberProfile.shop_id) {
+      toast.error("Não é possível cancelar seu perfil profissional enquanto estiver vinculado a uma barbearia. Por favor, desvincule-se primeiro.");
+      return;
+    }
+    setCancelConsent(false);
+    setShowCancelBarberModal(true);
+  }
+
+  async function handleCancelBarberProfile() {
+    if (!barberProfile) return;
+    if (!cancelConsent) {
+      toast.error("Você precisa aceitar os termos marcando a caixa de consentimento.");
+      return;
+    }
+    setCancelingBarber(true);
+    try {
+      // Excluir perfil do barbeiro
+      await db.entities.Barber.delete(barberProfile.id);
+      
+      toast.success("Perfil profissional cancelado com sucesso!");
+      setShowCancelBarberModal(false);
+      setCancelConsent(false);
+      
+      // Atualizar dados de sessão e caches
+      await refreshProfile();
+      queryClient.invalidateQueries({ queryKey: ['Barber'] });
+      queryClient.invalidateQueries({ queryKey: ['BarberLinkRequest'] });
+      queryClient.invalidateQueries({ queryKey: ['BarberLinkHistory'] });
+      
+      // Forçar recarregamento da página para limpar o estado e rotas
+      window.location.reload();
+    } catch (err) {
+      console.error("Erro ao desativar perfil de barbeiro:", err);
+      toast.error("Erro ao cancelar o perfil: " + (err.message || ""));
+    } finally {
+      setCancelingBarber(false);
+    }
   }
 
   const createShopMutation = useEntityCreate('Shop');
@@ -823,6 +896,17 @@ export default function Profile() {
                             <Button type="submit" disabled={barberLoading} className="w-full text-xs h-9">
                               Solicitar Vínculo
                             </Button>
+                            {/* Botão de Excluir Perfil Profissional */}
+                            <div className="pt-4 border-t border-border/20 mt-4">
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                onClick={handleStartCancelBarber}
+                                className="w-full text-xs h-9 bg-red-950/20 text-red-400 hover:bg-red-900/30 border border-red-500/20 rounded-lg"
+                              >
+                                Cancelar Perfil Profissional
+                              </Button>
+                            </div>
                           </form>
                         )}
                       </div>
@@ -850,6 +934,7 @@ export default function Profile() {
                       <Input value={barberForm.name || ""} onChange={e => setBarberForm({ ...barberForm, name: e.target.value })} required placeholder="Ex: Barber João" className="h-9 text-xs bg-muted/20 border-border/40" />
                     </div>
                     <div className="pt-1">
+                      <Label className="text-xs text-muted-foreground mb-1.5 block font-medium">Foto Profissional *</Label>
                       <ImageUpload
                         value={barberForm.photo || ""}
                         onChange={(url) => setBarberForm(prev => ({ ...prev, photo: url }))}
@@ -860,25 +945,25 @@ export default function Profile() {
                       />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Quem sou eu / Bio</Label>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Quem sou eu / Bio *</Label>
                       <Textarea value={barberForm.bio || ""} onChange={e => setBarberForm({ ...barberForm, bio: e.target.value })} placeholder="Ex: Especialista em corte degradê e barba clássica..." className="text-xs h-16 resize-none bg-muted/20 border-border/40" />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Carreira e Experiência</Label>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Carreira e Experiência *</Label>
                       <Textarea value={barberForm.career || ""} onChange={e => setBarberForm({ ...barberForm, career: e.target.value })} placeholder="Trajetória profissional, formações, conquistas..." className="text-xs h-16 resize-none bg-muted/20 border-border/40" />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">WhatsApp</Label>
+                        <Label className="text-xs text-muted-foreground mb-1 block">WhatsApp *</Label>
                         <Input value={barberForm.whatsapp || ""} onChange={e => setBarberForm({ ...barberForm, whatsapp: e.target.value })} placeholder="5511999999999" className="h-9 text-xs bg-muted/20 border-border/40" />
                       </div>
                       <div>
-                        <Label className="text-xs text-muted-foreground mb-1 block">Instagram</Label>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Instagram (Opcional)</Label>
                         <Input value={barberForm.instagram || ""} onChange={e => setBarberForm({ ...barberForm, instagram: e.target.value })} placeholder="@barbeiro" className="h-9 text-xs bg-muted/20 border-border/40" />
                       </div>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Especialidades (separadas por vírgula)</Label>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Especialidades (separadas por vírgula) *</Label>
                       <Input value={barberForm.specialties || ""} onChange={e => setBarberForm({ ...barberForm, specialties: e.target.value })} placeholder="Ex: Degradê, Barba, Pigmentação" className="h-9 text-xs bg-muted/20 border-border/40" />
                     </div>
                     <Button type="submit" disabled={barberLoading} className="w-full text-xs h-9 mt-2">
@@ -1091,6 +1176,70 @@ export default function Profile() {
               className="flex-1 rounded-xl text-xs h-9 bg-destructive hover:bg-destructive/90 text-white">
               <Trash2 className="w-3 h-3 mr-1" /> Confirmar exclusão
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cancelamento de Perfil Profissional */}
+      {showCancelBarberModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border/50 rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200">
+            <button 
+              onClick={() => setShowCancelBarberModal(false)}
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-3 text-red-500 border border-red-500/25">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-lg text-foreground">Cancelar Perfil Profissional</h3>
+              <p className="text-sm text-muted-foreground mt-1 font-normal">Esta ação é irreversível</p>
+            </div>
+
+            <div className="space-y-4 text-sm text-muted-foreground mb-6 bg-muted/20 border border-border/30 p-4 rounded-xl">
+              <p className="text-left">Ao confirmar o cancelamento, seu perfil de barbeiro será excluído:</p>
+              <ul className="list-disc pl-5 space-y-1 text-xs text-left">
+                <li>Sua biografia, foto e especialidades serão removidas.</li>
+                <li>Seus vínculos e histórico profissional serão apagados.</li>
+                <li>Seus horários de atendimento e serviços serão deletados.</li>
+              </ul>
+              <p className="text-xs text-red-400 font-medium border-t border-border/20 pt-2.5 mt-2 text-left">
+                A sua conta principal de cliente continuará ativa e intocada para agendamentos.
+              </p>
+            </div>
+
+            <div className="flex items-start gap-2 mb-6 select-none cursor-pointer text-left">
+              <input
+                id="consent-checkbox"
+                type="checkbox"
+                checked={cancelConsent}
+                onChange={(e) => setCancelConsent(e.target.checked)}
+                className="mt-0.5 rounded border-border/50 bg-background text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+              />
+              <label htmlFor="consent-checkbox" className="text-xs text-foreground cursor-pointer font-medium leading-tight">
+                Estou ciente de que perderei os dados do meu perfil profissional de barbeiro.
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowCancelBarberModal(false)}
+                className="flex-1 rounded-xl text-xs h-10"
+              >
+                Voltar
+              </Button>
+              <Button 
+                onClick={handleCancelBarberProfile}
+                disabled={!cancelConsent || cancelingBarber}
+                className="flex-1 rounded-xl text-xs h-10 bg-red-600 hover:bg-red-500 text-white disabled:opacity-50"
+              >
+                {cancelingBarber ? "Cancelando..." : "Confirmar"}
+              </Button>
+            </div>
           </div>
         </div>
       )}

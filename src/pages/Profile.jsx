@@ -33,6 +33,7 @@ const STATUS_COLORS = {
 export default function Profile() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const isCpfRequired = user?.role && user.role !== 'user';
 
   const [form, setForm] = useState(/** @type {any} */ ({}));
   const [tab, setTab] = useState("historico");
@@ -40,7 +41,7 @@ export default function Profile() {
   const [editing, setEditing] = useState(false);
 
   const [selectedShopId, setSelectedShopId] = useState("");
-  const [barberForm, setBarberForm] = useState({ name: "", bio: "", specialties: "" });
+  const [barberForm, setBarberForm] = useState({ name: "", bio: "", specialties: "", photo: "", career: "", whatsapp: "", instagram: "" });
   const [shopForm, setShopForm] = useState({
     name: "",
     razao_social: "",
@@ -228,10 +229,8 @@ export default function Profile() {
     // Validate CPF if it was changed (not masked)
     const cpfCleaned = cpfInput.replace(/\D/g, '');
     const cpfIsNew = cpfCleaned.length === 11; // Only validate if user typed a full CPF (not masked)
-    const isBarber = !!barberProfile;
-
-    if (isBarber && !cpfSaved && !cpfIsNew) {
-      toast.error("Como barbeiro, o CPF é obrigatório. Preencha seu CPF para salvar.");
+    if (isCpfRequired && !cpfSaved && !cpfIsNew) {
+      toast.error("Para este tipo de conta, o CPF é obrigatório. Preencha seu CPF para salvar.");
       return;
     }
 
@@ -279,8 +278,12 @@ export default function Profile() {
       profile_id: user.id,
       owner_email: user.email,
       name: barberForm.name || user.full_name || "Barbeiro",
+      photo: barberForm.photo || "",
       bio: barberForm.bio || "",
-      specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()) : [],
+      career: barberForm.career || "",
+      whatsapp: barberForm.whatsapp || "",
+      instagram: barberForm.instagram || "",
+      specialties: barberForm.specialties ? barberForm.specialties.split(",").map(s => s.trim()).filter(Boolean) : [],
       is_active: false
     }, {
       onSuccess: () => {
@@ -643,15 +646,15 @@ export default function Profile() {
           </div>
 
           {/* CPF Field */}
-          <div className={`mt-4 p-4 rounded-xl border ${barberProfile && !cpfSaved ? 'bg-red-500/5 border-red-500/30' : 'bg-primary/5 border-primary/20'}`}>
+          <div className={`mt-4 p-4 rounded-xl border ${isCpfRequired && !cpfSaved ? 'bg-red-500/5 border-red-500/30' : 'bg-primary/5 border-primary/20'}`}>
             <div className="flex items-center gap-2 mb-2">
               <Shield className="w-4 h-4 text-primary" />
-              <Label className={`text-xs font-semibold ${barberProfile && !cpfSaved ? 'text-red-400' : 'text-primary'}`}>
-                CPF {barberProfile ? '(obrigatório para barbeiros)' : '(opcional)'}
+              <Label className={`text-xs font-semibold ${isCpfRequired && !cpfSaved ? 'text-red-400' : 'text-primary'}`}>
+                CPF {isCpfRequired ? '(obrigatório)' : '(opcional)'}
               </Label>
             </div>
-            {barberProfile && !cpfSaved && (
-              <p className="text-[10px] text-red-400 mb-2 font-medium">⚠️ Barbeiros devem informar o CPF para fins de cadastro e prevenção de duplicidade.</p>
+            {isCpfRequired && !cpfSaved && (
+              <p className="text-[10px] text-red-400 mb-2 font-medium">⚠️ Contas profissionais devem informar o CPF para fins de cadastro e prevenção de duplicidade.</p>
             )}
             <p className="text-[10px] text-muted-foreground mb-3">Armazenado de forma segura (hash SHA-256). Apenas os últimos dígitos ficam visíveis.</p>
             <Input
@@ -843,16 +846,40 @@ export default function Profile() {
                 ) : (
                   <form onSubmit={handleCreateBarber} className="space-y-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Nome Profissional</Label>
-                      <Input value={barberForm.name} onChange={e => setBarberForm({ ...barberForm, name: e.target.value })} required placeholder="Ex: Barber João" className="h-9 text-xs" />
+                      <Label className="text-xs text-muted-foreground mb-1 block">Nome Profissional *</Label>
+                      <Input value={barberForm.name || ""} onChange={e => setBarberForm({ ...barberForm, name: e.target.value })} required placeholder="Ex: Barber João" className="h-9 text-xs bg-muted/20 border-border/40" />
+                    </div>
+                    <div className="pt-1">
+                      <ImageUpload
+                        value={barberForm.photo || ""}
+                        onChange={(url) => setBarberForm(prev => ({ ...prev, photo: url }))}
+                        onRemove={() => setBarberForm(prev => ({ ...prev, photo: '' }))}
+                        label="Foto Profissional"
+                        aspect="square"
+                        maxSizeMB={5}
+                      />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Biografia</Label>
-                      <Textarea value={barberForm.bio} onChange={e => setBarberForm({ ...barberForm, bio: e.target.value })} placeholder="Ex: Especialista em corte degradê e barba clássica..." className="text-xs h-16 resize-none" />
+                      <Label className="text-xs text-muted-foreground mb-1 block">Quem sou eu / Bio</Label>
+                      <Textarea value={barberForm.bio || ""} onChange={e => setBarberForm({ ...barberForm, bio: e.target.value })} placeholder="Ex: Especialista em corte degradê e barba clássica..." className="text-xs h-16 resize-none bg-muted/20 border-border/40" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Carreira e Experiência</Label>
+                      <Textarea value={barberForm.career || ""} onChange={e => setBarberForm({ ...barberForm, career: e.target.value })} placeholder="Trajetória profissional, formações, conquistas..." className="text-xs h-16 resize-none bg-muted/20 border-border/40" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">WhatsApp</Label>
+                        <Input value={barberForm.whatsapp || ""} onChange={e => setBarberForm({ ...barberForm, whatsapp: e.target.value })} placeholder="5511999999999" className="h-9 text-xs bg-muted/20 border-border/40" />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Instagram</Label>
+                        <Input value={barberForm.instagram || ""} onChange={e => setBarberForm({ ...barberForm, instagram: e.target.value })} placeholder="@barbeiro" className="h-9 text-xs bg-muted/20 border-border/40" />
+                      </div>
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1 block">Especialidades (separadas por vírgula)</Label>
-                      <Input value={barberForm.specialties} onChange={e => setBarberForm({ ...barberForm, specialties: e.target.value })} placeholder="Ex: Degradê, Barba, Pigmentação" className="h-9 text-xs" />
+                      <Input value={barberForm.specialties || ""} onChange={e => setBarberForm({ ...barberForm, specialties: e.target.value })} placeholder="Ex: Degradê, Barba, Pigmentação" className="h-9 text-xs bg-muted/20 border-border/40" />
                     </div>
                     <Button type="submit" disabled={barberLoading} className="w-full text-xs h-9 mt-2">
                       Criar Perfil Profissional

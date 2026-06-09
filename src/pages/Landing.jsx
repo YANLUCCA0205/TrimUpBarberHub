@@ -4,6 +4,7 @@ import { Scissors, Calendar, TrendingUp, Users, Sparkles, ArrowRight, ChevronRig
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import db from "@/lib/db";
+import { getFeatureLabel } from '@/utils/planFeatures';
 
 const features = [
   { icon: Calendar, title: "Agendamento Inteligente", desc: "IA sugere horários, barbeiros e cortes ideais baseados no seu perfil." },
@@ -186,7 +187,7 @@ export default function Landing() {
                     {(plan.features || []).map((f, j) => (
                       <li key={j} className="flex items-center gap-2 text-sm text-muted-foreground">
                         <ChevronRight className="w-3.5 h-3.5 text-primary" />
-                        {f}
+                        {getFeatureLabel(f)}
                       </li>
                     ))}
                   </ul>

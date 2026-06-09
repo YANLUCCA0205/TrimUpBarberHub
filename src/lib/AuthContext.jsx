@@ -54,6 +54,49 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const validateSessionActively = useCallback(async () => {
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        setSession(null);
+        setProfile(null);
+        setRoles([]);
+        return;
+      }
+
+      // 1. Verificar expiração local
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (currentSession.expires_at && currentSession.expires_at <= currentTime) {
+        console.warn('Session expired. Logging out...');
+        await supabase.auth.signOut();
+        return;
+      }
+
+      // 2. Chamar getUser() para verificar integridade no Supabase
+      const { data: { user: supabaseUser }, error } = await supabase.auth.getUser();
+      if (error) {
+        // Ignora erros de rede (status undefined, 0 ou 5xx) e apenas desloga em falhas de credenciais/token inválido
+        const isAuthError = error.status === 400 || error.status === 401 || error.status === 403 ||
+                            error.message?.includes('invalid') ||
+                            error.message?.includes('expired') ||
+                            error.message?.includes('not found') ||
+                            error.message?.includes('refresh_token');
+        if (isAuthError) {
+          console.warn('Session invalid on server. Logging out...', error);
+          await supabase.auth.signOut();
+        }
+        return;
+      }
+      if (!supabaseUser) {
+        console.warn('No user returned. Logging out...');
+        await supabase.auth.signOut();
+        return;
+      }
+    } catch (err) {
+      console.error('Error validating active session:', err);
+    }
+  }, []);
+
   useEffect(() => {
     // Use ONLY onAuthStateChange — handles INITIAL_SESSION on startup
     // This eliminates the race condition with getSession()
@@ -86,8 +129,26 @@ export const AuthProvider = ({ children }) => {
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, [loadProfile]);
+    // Validação ativa inicial no carregamento
+    validateSessionActively();
+
+    // Verificação periódica a cada 2 minutos
+    const interval = setInterval(() => {
+      validateSessionActively();
+    }, 120000);
+
+    // Verificação quando a página ganha foco (ex: o usuário volta para a aba)
+    const handleFocus = () => {
+      validateSessionActively();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadProfile, validateSessionActively]);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();

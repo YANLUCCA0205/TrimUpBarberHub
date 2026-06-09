@@ -1,13 +1,12 @@
 import db from '@/lib/db';
-
 import { useState, useEffect } from "react";
-
 import { CreditCard, Plus, Edit2, Trash2, Check, X, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AVAILABLE_FEATURES, migrateFeatureStringToId, getFeatureLabel } from '@/utils/planFeatures';
 
-const EMPTY = { name: "", monthly_price: "", annual_price: "", annual_discount: "", trial_days: 14, max_barbers: "", max_clients: "", max_units: 1, features: "", description: "", is_active: true };
+const EMPTY = { name: "", monthly_price: "", annual_price: "", annual_discount: "", trial_days: 14, max_barbers: "", max_clients: "", max_units: 1, features: [], description: "", is_active: true };
 
 export default function SiteOwnerPlanos() {
   const [plans, setPlans] = useState([]);
@@ -27,12 +26,13 @@ export default function SiteOwnerPlanos() {
   }
 
   function startNew() {
-    setForm(EMPTY);
+    setForm({ ...EMPTY, features: [] });
     setEditing("new");
   }
 
   function startEdit(plan) {
-    setForm({ ...plan, features: (plan.features || []).join(", ") });
+    const migrated = (plan.features || []).map(f => migrateFeatureStringToId(f));
+    setForm({ ...plan, features: migrated });
     setEditing(plan);
   }
 
@@ -48,7 +48,7 @@ export default function SiteOwnerPlanos() {
       max_barbers: Number(form.max_barbers) || undefined,
       max_clients: Number(form.max_clients) || undefined,
       max_units: Number(form.max_units) || 1,
-      features: form.features ? form.features.split(",").map(f => f.trim()).filter(Boolean) : [],
+      features: Array.isArray(form.features) ? form.features : [],
     };
     if (editing === "new") {
       await db.entities.Plan.create(payload);
@@ -109,9 +109,41 @@ export default function SiteOwnerPlanos() {
               </div>
             ))}
             <div className="md:col-span-2">
-              <Label className="text-xs mb-1.5">Recursos (separados por vírgula)</Label>
-              <Input placeholder="Agenda ilimitada, CRM completo, Analytics" value={form.features || ""}
-                onChange={e => setForm(p => ({ ...p, features: e.target.value }))} className="bg-background" />
+              <Label className="text-xs mb-3 block font-semibold text-primary">Recursos do Plano (Selecione os recursos ativos)</Label>
+              <div className="space-y-4 max-h-[250px] overflow-y-auto pr-2 border border-border/40 rounded-xl p-4 bg-muted/20">
+                {Object.entries(
+                  AVAILABLE_FEATURES.reduce((acc, feat) => {
+                    (acc[feat.category] = acc[feat.category] || []).push(feat);
+                    return acc;
+                  }, {})
+                ).map(([category, items]) => (
+                  <div key={category} className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/20 pb-1">{category}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {items.map(feat => {
+                        const checked = (form.features || []).includes(feat.id);
+                        return (
+                          <label key={feat.id} className="flex items-center gap-2 text-xs text-foreground cursor-pointer hover:text-primary transition-colors py-0.5 select-none">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                const current = form.features || [];
+                                const next = checked
+                                  ? current.filter(x => x !== feat.id)
+                                  : [...current, feat.id];
+                                setForm(p => ({ ...p, features: next }));
+                              }}
+                              className="rounded border-border/50 bg-background text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span>{feat.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="md:col-span-2">
               <Label className="text-xs mb-1.5">Descrição</Label>
@@ -144,7 +176,7 @@ export default function SiteOwnerPlanos() {
               {plan.max_barbers && <p className="text-xs text-muted-foreground">· Até {plan.max_barbers} barbeiros</p>}
               {plan.max_clients && <p className="text-xs text-muted-foreground">· Até {plan.max_clients} clientes</p>}
               {plan.trial_days && <p className="text-xs text-muted-foreground">· {plan.trial_days} dias grátis</p>}
-              {(plan.features || []).map((f, i) => <p key={i} className="text-xs text-muted-foreground">· {f}</p>)}
+              {(plan.features || []).map((f, i) => <p key={i} className="text-xs text-muted-foreground">· {getFeatureLabel(f)}</p>)}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => startEdit(plan)} className="flex-1 h-8 text-xs gap-1">

@@ -1,44 +1,32 @@
+import React from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { Link, useLocation } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import RegistrationModal from './RegistrationModal';
 
-function isMissingCriticalFields(profile) {
-  if (!profile) return true;
+function isProfileIncomplete(user, profile) {
+  if (!user || !profile) return false;
+
   const name = profile.full_name;
-  if (!name || name.trim() === '' || name === 'Usuário') return true;
-  if (!profile.phone || profile.phone.trim() === '') return true;
-  return false;
+  const hasName = name && name.trim() !== '' && name !== 'Usuário';
+  const hasPhone = profile.phone && profile.phone.trim() !== '';
+
+  if (user.role === 'user') {
+    return !hasName || !hasPhone;
+  } else {
+    // Para todas as demais roles (barbeiro, proprietário da barbearia, administrador, etc.), o CPF é obrigatório
+    const hasCpf = profile.cpf_hash && profile.cpf_hash.trim() !== '';
+    return !hasName || !hasPhone || !hasCpf;
+  }
 }
 
 export default function RegistrationGuard({ children }) {
   const { user, profile, isAuthenticated } = useAuth();
-  const location = useLocation();
 
-  // Only check for authenticated users
-  const showBanner =
-    isAuthenticated &&
-    isMissingCriticalFields(profile) &&
-    location.pathname !== '/profile';
+  const showModal = isAuthenticated && isProfileIncomplete(user, profile);
 
   return (
     <>
-      {showBanner && (
-        <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
-          <div className="flex items-center gap-2 text-yellow-400">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>
-              Seu cadastro está incompleto. Complete as informações para continuar.
-            </span>
-          </div>
-          <Link
-            to="/profile"
-            className="shrink-0 text-xs font-medium text-yellow-400 hover:text-yellow-300 underline underline-offset-2 transition-colors"
-          >
-            Completar perfil
-          </Link>
-        </div>
-      )}
       {children}
+      <RegistrationModal isOpen={showModal} />
     </>
   );
 }

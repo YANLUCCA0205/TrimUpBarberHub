@@ -24,8 +24,8 @@ const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } };
 
 const fallbackPlans = [
   { name: "Free", monthly_price: 0, features: ["Até 50 agendamentos/mês", "1 barbeiro", "Perfil básico", "Agendamento online"] },
-  { name: "Pro", monthly_price: 89, popular: true, features: ["Agendamentos ilimitados", "Até 5 barbeiros", "BI & Analytics", "Marketplace", "CRM completo", "IA de recomendações"] },
-  { name: "Premium", monthly_price: 199, features: ["Tudo do Pro", "Barbeiros ilimitados", "IA estratégica avançada", "Heatmap de clientes", "API & integrações", "Suporte prioritário"] }
+  { name: "Pro", monthly_price: 59.90, popular: true, features: ["Agendamentos ilimitados", "Até 5 barbeiros", "BI & Analytics", "Marketplace", "CRM completo", "IA de recomendações"] },
+  { name: "Premium", monthly_price: 119.90, features: ["Tudo do Pro", "Barbeiros ilimitados", "IA estratégica avançada", "Heatmap de clientes", "API & integrações", "Suporte prioritário"] }
 ];
 
 export default function Landing() {

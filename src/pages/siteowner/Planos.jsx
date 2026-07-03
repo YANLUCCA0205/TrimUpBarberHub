@@ -137,8 +137,8 @@ export default function SiteOwnerPlanos() {
         {
           name: "Pro",
           description: "Ideal para barbearias em crescimento",
-          monthly_price: 49.90,
-          annual_price: 499.00,
+          monthly_price: 59.90,
+          annual_price: 599.00,
           annual_discount: 15,
           trial_days: 14,
           max_barbers: 5,
@@ -156,8 +156,8 @@ export default function SiteOwnerPlanos() {
         {
           name: "Premium",
           description: "Gestão completa e ilimitada para o seu negócio",
-          monthly_price: 99.90,
-          annual_price: 999.00,
+          monthly_price: 119.90,
+          annual_price: 1199.00,
           annual_discount: 20,
           trial_days: 14,
           max_barbers: 15,

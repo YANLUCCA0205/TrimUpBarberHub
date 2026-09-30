@@ -31,17 +31,18 @@ Existem **dois fluxos financeiros totalmente distintos** no ecossistema do TrimU
 
 ### 1.1 Core do TrimUp no MVP
 O núcleo do TrimUp na v0 é:  
-**"Agendamento Multi-tenant Inteligente + Cadastro Frágil de Clientes + CRM via WhatsApp + Perfil de Carreira Portável do Barbeiro + Gestão de Assinaturas B2B."**
+**"Agendamento Multi-tenant Inteligente + Cadastro Frágil de Clientes + CRM via WhatsApp + Perfil de Carreira Portável do Barbeiro + Simulador Sandbox Isolado + Gestão de Assinaturas B2B."**
 
 ---
 
 ### 1.2 Módulos Obrigatórios da v0 (MVP)
-Para garantir lançamento rápido e valor imediato, a v0 conterá **exatamente 4 módulos essenciais**:
+Para garantir lançamento rápido e valor imediato, a v0 conterá **exatamente 5 módulos essenciais**:
 
 1. **Módulo de Agendamento & Gestão de Agenda:** Calendário responsivo, bloqueio de horários, configuração de grade por barbeiro, agendamento para clientes cadastrados e agendamento via **Cadastro Frágil (Shadow Profile)**.
 2. **Módulo de Perfil de Carreira (CRB):** Portfólio do barbeiro, biografia, fotos de cortes, especialidades e histórico auditado de vínculo com barbearias.
 3. **Módulo CRM & Notificações WhatsApp:** Envio de confirmação imediata, lembretes pré-atendimento (gatilho de 2h antes), atalhos rápidos via link Direct (`wa.me`) e fusão inteligente de contatos.
-4. **Módulo de Gestão Multi-Tenant & Assinaturas B2B:** Dashboard administrativo para a barbearia, controle de planos, limitação por barbeiros e portal de métricas do Site Owner.
+4. **Módulo Simulador de Ambiente Sandbox (Site Owner):** Modo de teste 100% isolado da produção com dados de demonstração (mockados) sem poluição do banco real.
+5. **Módulo de Gestão Multi-Tenant & Assinaturas B2B:** Dashboard administrativo para a barbearia, controle de planos, limitação por barbeiros e portal de métricas do Site Owner.
 
 ---
 
@@ -146,11 +147,50 @@ flowchart TD
 
 ---
 
-### 2.6 Matriz de Controle de Acesso Baseado em Papéis (RBAC)
+### 2.6 ARQUITETURA DO SIMULADOR SANDBOX (DADOS MOCKADOS ISOLADOS)
+
+> ⚠️ **REQUISITO FUNDAMENTAL DE ARQUITETURA (NÃO-POLUIÇÃO DA PRODUÇÃO):**  
+> O Simulador do Site Owner **NUNCA deve utilizar ou alterar dados reais do banco de produção** (Supabase). Ele opera sob um ambiente **Sandbox com Mock Data isolado**.
+
+```mermaid
+flowchart TD
+    subgraph Trigger["Disparo do Simulador"]
+        SO["Site Owner aciona o Simulador"] --> SELECT_ROLE["Escolhe Role (USER, BARBER, ADMIN)"]
+        SELECT_ROLE --> ACTIVATE["Define 'trimup_sim' no localStorage (active: true)"]
+    end
+
+    subgraph DataRouter["Roteador de Dados (Mock Interceptor em db.js)"]
+        ACTIVATE --> CHECK{"Modo Simulação Ativo?"}
+        CHECK -->|SIM (Sandbox)| MOCK_DB["Base Virtual Mock (localStorage: trimup_sandbox_db)"]
+        CHECK -->|NÃO (Produção)| PROD_DB[("PostgreSQL / Supabase Real")]
+    end
+
+    subgraph Operations["Operações durante a Simulação"]
+        MOCK_DB --> READ["Consultas (list, filter, get) ➔ Retorna Barbearias & Barbeiros Demo"]
+        MOCK_DB --> WRITE["Escrita (create, update, delete) ➔ Salva APENAS na memória Mock"]
+        WRITE --> NO_POLLUTION["Garantia: Zero registros fictícios criados no banco real"]
+    end
+
+    subgraph Reset["Restauração"]
+        RESET_BTN["Botão 'Resetar Sandbox'"] --> REVERT["Restaura Mock Data padrão da demonstração"]
+    end
+```
+
+#### Regras do Modo Sandbox:
+1. **Mock Data de Demonstração:** O sistema disponibiliza barbearias de teste pré-configuradas (ex: *"Barbearia BarberKing Demo"*, *"TrimUp Studio Sandbox"*) com barbeiros, serviços e agendamentos fictícios.
+2. **Escrita Segura na Memória Local:** Se você simular um **Cliente (USER)** e realizar um agendamento, o agendamento é gravado **exclusivamente na tabela simulada do `localStorage` (`trimup_sandbox_db`)**.
+3. **Alternância Transparente de Visão:** Ao trocar de papel dentro do simulador (ex: de Cliente para Admin), o Admin enxerga os agendamentos que você acabou de fazer no ambiente simulado, permitindo validar todo o ciclo de vida da aplicação.
+4. **Isolamento de Produção:** Nenhuma requisição HTTP/PostgREST de escrita é enviada para o banco oficial durante a simulação.
+5. **Botão de Reset Instantâneo:** O Site Owner pode resetar todas as alterações feitas no Sandbox a qualquer momento com 1 clique ("Restaurar Dados Demo").
+
+---
+
+### 2.7 Matriz de Controle de Acesso Baseado em Papéis (RBAC)
 
 | Módulo / Funcionalidade | Site Owner | Owner (Dono) | Admin (Gerente) | Barber (Barbeiro) | Client (Cliente) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Gestão de Planos do SaaS** | CRUD | Leitura / Alteração | - | - | - |
+| **Simulador Sandbox (Mock)** | Acesso Total | - | - | - | - |
 | **Configuração da Barbearia** | - | CRUD | CRUD | Leitura | - |
 | **Gestão de Serviços & Preços** | - | CRUD | CRUD | Leitura | Leitura |
 | **Agendar para Cliente Cadastrado** | - | CRUD | CRUD | CRUD | Criar Próprio |
@@ -207,9 +247,10 @@ flowchart TD
 
 ---
 
-### 3.6 BI & Analytics
+### 3.6 BI & Analytics & Simulador Sandbox
 - **UC-21 — Dashboard de Faturamento & Métricas:** Receita Total, Ticket Médio, Total de Atendimentos e Taxa de Cancelamento.
 - **UC-22 — Ranking de Barbeiros & Serviços:** Relatório comparativo por faturamento e popularidade.
+- **UC-25 — Simulação de Perfil & Modo Sandbox Isolado:** Permite ao Site Owner trocar a perspectiva para Cliente, Barbeiro ou Administrador operando sobre dados mockados isolados no `localStorage` sem alterar registros reais do banco Supabase.
 
 ---
 
@@ -273,16 +314,16 @@ flowchart TD
     OWNER -->|Gerencia Barbearia e Assinatura| WEB_APP
     BARBER -->|Gerencia Horários, Cadastro Frágil e Portfólio| WEB_APP
     CLIENT -->|Realiza Agendamentos| WEB_APP
-    SITE_OWNER -->|Monitora Métricas do SaaS| WEB_APP
+    SITE_OWNER -->|Monitora Métricas / Testa em Modo Sandbox| WEB_APP
 
-    WEB_APP -->|Autenticação e Dados| SUPABASE
+    WEB_APP -->|Autenticação e Dados Reais| SUPABASE
     WEB_APP -->|Processa Assinaturas B2B| GATEWAY_PAG
     WEB_APP -->|Envia Lembretes Transacionais| WHATSAPP_API
 ```
 
 ---
 
-### 5.2 C4 Model — Diagrama de Containers
+### 5.2 C4 Model — Diagrama de Containers (com Interceptador Sandbox)
 
 ```mermaid
 flowchart TD
@@ -290,25 +331,25 @@ flowchart TD
         SPA["React SPA (Tailwind CSS, Lucide Icons)"]
     end
 
-    subgraph BackendLayer["Camada Backend & Banco (Supabase BaaS)"]
+    subgraph DataRouterLayer["Roteador de Ambiente (db.js Interceptor)"]
+        ROUTER{"Simulador Ativo?"}
+        SPA --> ROUTER
+    end
+
+    subgraph SandboxLayer["Camada Sandbox (Ambiente de Teste)"]
+        MOCK_STORE["Mock Data (localStorage: trimup_sandbox_db)"]
+        ROUTER -->|SIM| MOCK_STORE
+    end
+
+    subgraph BackendLayer["Camada Backend Real (Supabase BaaS)"]
         AUTH["Supabase Auth (JWT, OAuth)"]
         REST_API["PostgREST API Engine"]
         DB[(PostgreSQL Database com RLS)]
-        STORAGE["Supabase Storage (Imagens, Avatares, Cortes)"]
+        STORAGE["Supabase Storage"]
+        ROUTER -->|NÃO| REST_API
     end
 
-    subgraph AsyncLayer["Serviços Assíncronos & Workers"]
-        CRON["Edge Functions / Cron Job (Lembretes)"]
-        WPP_WORKER["Worker WhatsApp Integrator"]
-    end
-
-    SPA -->|HTTPS / REST| REST_API
-    SPA -->|Autenticação JWT| AUTH
-    SPA -->|Upload de Mídia| STORAGE
-    REST_API -->|Executa Consultas, Matching de Fusão e Triggers| DB
-    CRON -->|Busca Agendamentos Próximos (Oficiais e Frágeis)| DB
-    CRON -->|Dispara Payload de Mensagem| WPP_WORKER
-    WPP_WORKER -->|HTTPS API| WHATSAPP_API["WhatsApp Cloud API"]
+    REST_API --> DB
 ```
 
 ---
@@ -361,12 +402,13 @@ Para aprovação direta e travamento do escopo de execução, aqui estão as res
 | **8** | **O perfil de carreira é público no marketplace?** | **SIM.** Página de portfólio pública (CRB) com histórico verificado de passagens por barbearias. |
 | **9** | **Estoque entra no MVP?** | **SIM.** Cadastro simples de produtos com controle básico de entrada/saída e alerta de estoque baixo. |
 | **10** | **BI entra no MVP? Quais 3 métricas mínimas?** | **SIM.** As 3 métricas mínimas são: **1) Faturamento Total**, **2) Total de Atendimentos Realizados**, **3) Ranking de Barbeiros/Serviços**. |
+| **11** | **Como funciona o Simulador do Site Owner?** | **Ambiente Sandbox 100% isolado com Mock Data.** Nenhuma operação no simulador altera dados reais do Supabase de produção. |
 
 ---
 
 ## 🚀 PRÓXIMOS PASSOS PARA EXECUÇÃO
 
 1. **Documentação 100% Aprovada e Atualizada.**
-2. **Executar Scripts SQL de Atualização** no Supabase (compatível com `schema.sql` e a coluna `profile_id` opcional em `client_records`).
-3. **Validar Fluxo de Checkout B2B & Motor de Fusão de Cadastro Frágil.**
+2. **Implementar o Interceptador de Dados Sandbox no `db.js`** para garantir o isolamento absoluto dos testes do Site Owner.
+3. **Executar Scripts SQL de Atualização** no Supabase.
 4. **Disponibilizar a versão v0 comercializável.**

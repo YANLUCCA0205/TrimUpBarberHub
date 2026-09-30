@@ -4,6 +4,8 @@ Bem-vindo ao **TrimUp BarberHub**, uma plataforma SaaS premium e multilocatária
 
 Este repositório contém todo o código frontend e a modelagem do banco de dados necessária para executar a aplicação localmente ou publicá-la.
 
+> 📖 **Documentação de Arquitetura e Visão de Produto:** Para conferir a especificação técnica completa, matriz de planos (Free/Pro/Premium), divisão dos fluxos de pagamento (B2B recorrente vs. B2C presencial), perfis de carreira e use cases do MVP, consulte o [Documento de Arquitetura e Visão](docs/arquitetura-e-visao.md).
+
 ---
 
 ## 1. Como Executar o Projeto Localmente
@@ -74,8 +76,10 @@ O sistema conecta de forma integrada quatro perfis fundamentais de usuários:
 
 ```
 TrimUpBarberHub/
+├── docs/                        # Documentação de arquitetura, escopo e requisitos (PRD)
+│   └── arquitetura-e-visao.md   # Especificação completa de regras de negócio e planos
 ├── schema.sql                   # Blueprint do banco de dados (PostgreSQL, Triggers, RLS)
-├── README.md                    # Esta documentação do projeto
+├── README.md                    # Guia de início rápido e visão geral do projeto
 ├── eslint.config.js             # Regras do Linter
 ├── tailwind.config.js           # Tokens e paleta de cores do Design System
 ├── src/

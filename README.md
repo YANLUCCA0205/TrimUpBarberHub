@@ -24,11 +24,12 @@ Este repositório contém todo o código frontend e a modelagem do banco de dado
    VITE_SUPABASE_URL=https://sua-url-do-supabase.supabase.co
    VITE_SUPABASE_ANON_KEY=sua-anon-key-publica-do-supabase
    ```
-3. Execute o servidor de desenvolvimento local:
+3. *(Opcional)* Se estiver configurando uma nova instância do Supabase, execute os scripts SQL presentes em [`supabase/`](supabase/README.md).
+4. Execute o servidor de desenvolvimento local:
    ```bash
    npm run dev
    ```
-4. Abra o navegador no endereço indicado (geralmente `http://localhost:5173`).
+5. Abra o navegador no endereço indicado (geralmente `http://localhost:5173`).
 
 ---
 
@@ -78,7 +79,10 @@ O sistema conecta de forma integrada quatro perfis fundamentais de usuários:
 TrimUpBarberHub/
 ├── docs/                        # Documentação de arquitetura, escopo e requisitos (PRD)
 │   └── arquitetura-e-visao.md   # Especificação completa de regras de negócio e planos
-├── schema.sql                   # Blueprint do banco de dados (PostgreSQL, Triggers, RLS)
+├── supabase/                    # Scripts do banco de dados PostgreSQL
+│   ├── schema.sql               # Blueprint inicial do banco de dados (Tabelas, Triggers, RLS)
+│   ├── migrations/              # Migrações incrementais organizadas em ordem sequencial
+│   └── README.md                # Guia de execução do banco no Supabase
 ├── README.md                    # Guia de início rápido e visão geral do projeto
 ├── eslint.config.js             # Regras do Linter
 ├── tailwind.config.js           # Tokens e paleta de cores do Design System

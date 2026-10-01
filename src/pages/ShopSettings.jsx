@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Store, Palette, MapPin, Phone, Save, Plus, Trash2, Edit2, X, Check, Scissors, Users } from "lucide-react";
+import { Store, Palette, MapPin, Phone, Save, Plus, Trash2, Edit2, X, Check, Scissors, Users, CreditCard, Sparkles, ShieldCheck, Copy, QrCode, Calendar, Zap } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ImageUpload from '../components/ImageUpload';
+import { getFeatureLabel } from '@/utils/planFeatures';
 
 const SECTION = ({ icon: Icon, title, children }) => (
   <div className="p-6 rounded-2xl bg-card border border-border/50">
@@ -32,7 +33,7 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const TABS = ["Configurações", "Barbeiros", "Serviços"];
+const TABS = ["Configurações", "Barbeiros", "Serviços", "Plano & Assinatura"];
 
 export default function ShopSettings() {
   const { user } = useAuth();
@@ -58,6 +59,12 @@ export default function ShopSettings() {
   const [barberCpfInput, setBarberCpfInput] = useState("");
   const [importingCpf, setImportingCpf] = useState(false);
 
+  // Plans & Subscription state
+  const [plans, setPlans] = useState([]);
+  const [subscription, setSubscription] = useState(null);
+  const [checkoutPlan, setCheckoutPlan] = useState(null);
+  const [simulatingPix, setSimulatingPix] = useState(false);
+
   useEffect(() => {
     if (!user) return;
     async function load() {
@@ -67,13 +74,52 @@ export default function ShopSettings() {
         setShop(currentShop);
         setForm(currentShop);
         
-        const [b, s, reqs] = await Promise.all([
+        const [b, s, reqs, allPlans, subs] = await Promise.all([
           db.entities.Barber.filter({ shop_id: currentShop.id }),
           db.entities.Service.filter({ shop_id: currentShop.id }),
-          db.entities.BarberLinkRequest.filter({ shop_id: currentShop.id, status: "pending" })
+          db.entities.BarberLinkRequest.filter({ shop_id: currentShop.id, status: "pending" }),
+          db.entities.Plan.list("-monthly_price", 20).catch(() => []),
+          db.entities.Subscription.filter({ shop_id: currentShop.id }).catch(() => [])
         ]);
         
         setBarbers(b);
+
+        const fallbackPlans = [
+          {
+            id: "sandbox-plan-1",
+            name: "FREE",
+            description: "Plano inicial gratuito",
+            monthly_price: 0,
+            annual_price: 0,
+            max_barbers: 1,
+            max_clients: 50,
+            features: ["agenda_online", "crm_cadastro"]
+          },
+          {
+            id: "sandbox-plan-2",
+            name: "PRO",
+            description: "Plano ideal para barbearias em expansão",
+            monthly_price: 79.90,
+            annual_price: 799.00,
+            max_barbers: 5,
+            max_clients: 9999,
+            features: ["agenda_online", "crm_cadastro", "mkt_whatsapp", "fin_relatorios"]
+          },
+          {
+            id: "sandbox-plan-3",
+            name: "PREMIUM",
+            description: "Multi-unidades e recursos completos",
+            monthly_price: 149.90,
+            annual_price: 1499.00,
+            max_barbers: 15,
+            max_clients: 9999,
+            features: ["agenda_online", "crm_cadastro", "mkt_whatsapp", "fin_relatorios", "sys_multi", "mkt_campanhas"]
+          }
+        ];
+
+        const validPlans = (allPlans && allPlans.length > 0) ? allPlans : fallbackPlans;
+        setPlans(validPlans);
+        setSubscription(subs?.[0] || null);
         
         // Get services for all barbers in this shop
         const barberIds = b.map(x => x.id);
@@ -107,6 +153,40 @@ export default function ShopSettings() {
     }
     load();
   }, [user]);
+
+  async function confirmPixPayment() {
+    if (!checkoutPlan || !shop) return;
+    setSimulatingPix(true);
+    try {
+      const payload = {
+        shop_id: shop.id,
+        plan_id: checkoutPlan.id,
+        status: "active",
+        monthly_value: Number(checkoutPlan.monthly_price),
+        start_date: new Date().toISOString().slice(0, 10),
+        renewal_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+        auto_renew: true
+      };
+
+      let updatedSub;
+      if (subscription?.id) {
+        updatedSub = await db.entities.Subscription.update(subscription.id, payload);
+      } else {
+        updatedSub = await db.entities.Subscription.create(payload);
+      }
+
+      await db.entities.Shop.update(shop.id, { plan_id: checkoutPlan.id });
+      setSubscription(updatedSub);
+      setShop(prev => ({ ...prev, plan_id: checkoutPlan.id }));
+      setCheckoutPlan(null);
+      toast.success(`Pagamento confirmado! Sua barbearia agora é ${checkoutPlan.name}! 🎉`);
+    } catch (err) {
+      console.error("Erro ao ativar assinatura Pix:", err);
+      toast.error("Erro ao processar assinatura Pix.");
+    } finally {
+      setSimulatingPix(false);
+    }
+  }
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
@@ -761,6 +841,264 @@ export default function ShopSettings() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Plano & Assinatura */}
+      {activeTab === 3 && (
+        <div className="space-y-6">
+          {/* Card: Status do Plano Atual */}
+          {(() => {
+            const currentPlan = plans.find(p => p.id === (subscription?.plan_id || shop?.plan_id)) || plans.find(p => p.monthly_price === 0) || plans[0];
+            const isSubActive = subscription?.status === "active";
+            const isTrial = subscription?.status === "trial" || !subscription;
+
+            return (
+              <div className="p-6 rounded-2xl bg-gradient-to-br from-card via-card to-primary/5 border border-primary/20 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Plano da Barbearia</span>
+                    <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                      {currentPlan?.name || "Plano TrimUp"}
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
+                        isSubActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                        isTrial ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" :
+                        "bg-red-500/10 text-red-400 border border-red-500/20"
+                      }`}>
+                        {isSubActive ? "Assinatura Ativa" : isTrial ? "Período de Testes" : "Pendente/Inativa"}
+                      </span>
+                    </h2>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-black text-primary">
+                      {currentPlan?.monthly_price > 0 ? `R$ ${Number(currentPlan.monthly_price).toFixed(2)}` : "Grátis"}
+                      {currentPlan?.monthly_price > 0 && <span className="text-xs text-muted-foreground font-normal"> / mês</span>}
+                    </p>
+                    {subscription?.renewal_date && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Renovação em: {new Date(subscription.renewal_date + "T12:00").toLocaleDateString("pt-BR")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Métricas de Uso vs Limites */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="p-3 rounded-xl bg-background/50 border border-border/50">
+                    <p className="text-xs text-muted-foreground">Barbeiros Cadastrados</p>
+                    <p className="text-lg font-bold mt-1 text-foreground">
+                      {barbers.length} <span className="text-xs text-muted-foreground font-normal">/ {currentPlan?.max_barbers || "Ilimitado"}</span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-background/50 border border-border/50">
+                    <p className="text-xs text-muted-foreground">Serviços no Catálogo</p>
+                    <p className="text-lg font-bold mt-1 text-foreground">
+                      {services.length} <span className="text-xs text-muted-foreground font-normal">ativos</span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-background/50 border border-border/50">
+                    <p className="text-xs text-muted-foreground">Limite de Clientes CRM</p>
+                    <p className="text-lg font-bold mt-1 text-foreground">
+                      {currentPlan?.max_clients ? `${currentPlan.max_clients}` : "Ilimitado"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Recursos inclusos */}
+                {currentPlan?.features && currentPlan.features.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Recursos inclusos no seu plano:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {currentPlan.features.map(f => (
+                        <div key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                          <span>{getFeatureLabel(f)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Comparativo de Planos & Upgrade */}
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-bold">Planos Disponíveis</h3>
+              <p className="text-xs text-muted-foreground">Escolha o plano ideal para a escala e faturamento da sua barbearia.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {plans.map(p => {
+                const isCurrent = (subscription?.plan_id || shop?.plan_id) === p.id || (!subscription?.plan_id && !shop?.plan_id && p.monthly_price === 0);
+                const isPro = p.name?.toUpperCase().includes("PRO");
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                      isPro
+                        ? "bg-primary/5 border-primary shadow-lg shadow-primary/5 relative"
+                        : "bg-card border-border/50 hover:border-border"
+                    }`}
+                  >
+                    {isPro && (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold px-3 py-0.5 rounded-full bg-primary text-primary-foreground tracking-wide uppercase">
+                        Mais Escolhido
+                      </span>
+                    )}
+
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-bold text-lg">{p.name}</h4>
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{p.description || "Plano completo TrimUp"}</p>
+                      </div>
+
+                      <div>
+                        <span className="text-3xl font-black text-foreground">
+                          {p.monthly_price > 0 ? `R$ ${Number(p.monthly_price).toFixed(2)}` : "Grátis"}
+                        </span>
+                        {p.monthly_price > 0 && <span className="text-xs text-muted-foreground"> /mês</span>}
+                      </div>
+
+                      <div className="space-y-2 pt-2 border-t border-border/40 text-xs">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                          <span>Até {p.max_barbers || "∞"} barbeiros</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                          <span>{p.max_clients ? `Até ${p.max_clients} clientes` : "Clientes ilimitados"}</span>
+                        </div>
+                        {(p.features || []).slice(0, 4).map(f => (
+                          <div key={f} className="flex items-center gap-2 text-muted-foreground">
+                            <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                            <span className="truncate">{getFeatureLabel(f)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-6">
+                      {isCurrent ? (
+                        <Button disabled variant="outline" className="w-full rounded-xl text-xs font-semibold">
+                          Plano Atual
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => setCheckoutPlan(p)}
+                          className="w-full bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl text-xs font-semibold gap-1.5"
+                        >
+                          <Zap className="w-3.5 h-3.5" /> Fazer Upgrade via Pix
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Checkout Pix B2B */}
+      {checkoutPlan && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-primary/20 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-border/40 pb-3">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-primary" />
+                <h3 className="font-bold text-base">Assinatura B2B via Pix</h3>
+              </div>
+              <button
+                onClick={() => setCheckoutPlan(null)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-center space-y-1">
+              <p className="text-xs text-muted-foreground">Você está contratando o plano</p>
+              <h2 className="text-2xl font-black text-foreground">{checkoutPlan.name}</h2>
+              <p className="text-xl font-bold text-primary">
+                R$ {Number(checkoutPlan.monthly_price).toFixed(2)} <span className="text-xs text-muted-foreground font-normal">/ mês</span>
+              </p>
+            </div>
+
+            {/* Simulated Pix QR Code */}
+            <div className="p-4 rounded-xl bg-white flex flex-col items-center justify-center max-w-[200px] mx-auto shadow-inner">
+              <svg viewBox="0 0 100 100" className="w-36 h-36">
+                <rect width="100" height="100" fill="#ffffff" />
+                <rect x="10" y="10" width="25" height="25" fill="#000000" />
+                <rect x="14" y="14" width="17" height="17" fill="#ffffff" />
+                <rect x="17" y="17" width="11" height="11" fill="#000000" />
+
+                <rect x="65" y="10" width="25" height="25" fill="#000000" />
+                <rect x="69" y="14" width="17" height="17" fill="#ffffff" />
+                <rect x="72" y="17" width="11" height="11" fill="#000000" />
+
+                <rect x="10" y="65" width="25" height="25" fill="#000000" />
+                <rect x="14" y="69" width="17" height="17" fill="#ffffff" />
+                <rect x="17" y="72" width="11" height="11" fill="#000000" />
+
+                <rect x="40" y="15" width="10" height="5" fill="#000000" />
+                <rect x="45" y="25" width="5" height="10" fill="#000000" />
+                <rect x="20" y="42" width="10" height="8" fill="#000000" />
+                <rect x="42" y="42" width="16" height="16" fill="#000000" rx="3" />
+                <rect x="65" y="45" width="15" height="6" fill="#000000" />
+                <rect x="45" y="65" width="10" height="10" fill="#000000" />
+                <rect x="65" y="65" width="8" height="18" fill="#000000" />
+                <rect x="78" y="75" width="12" height="8" fill="#000000" />
+              </svg>
+              <span className="text-[10px] text-zinc-600 font-bold uppercase mt-1">Pix Copia e Cola / QR Code</span>
+            </div>
+
+            {/* Pix Copy & Paste Key */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Código Pix Copia e Cola</Label>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={`00020126580014br.gov.bcb.pix0136trimup-b2b-${(checkoutPlan.id || 'pro').slice(0, 8)}520400005303986540${Number(checkoutPlan.monthly_price).toFixed(2)}5802BR5916TRIMUP BARBER6009SAO PAULO62070503***6304`}
+                  className="bg-muted text-[10px] font-mono select-all rounded-xl border-border/50"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const code = `00020126580014br.gov.bcb.pix0136trimup-b2b-${(checkoutPlan.id || 'pro').slice(0, 8)}520400005303986540${Number(checkoutPlan.monthly_price).toFixed(2)}5802BR5916TRIMUP BARBER6009SAO PAULO62070503***6304`;
+                    navigator.clipboard.writeText(code);
+                    toast.success("Código Pix copiado com sucesso!");
+                  }}
+                  className="rounded-xl flex-shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-2">
+              <Button
+                onClick={confirmPixPayment}
+                disabled={simulatingPix}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                {simulatingPix ? "Processando Ativação..." : "Simular Pagamento Pix (Ativar Imediatamente)"}
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() => setCheckoutPlan(null)}
+                className="w-full text-xs text-muted-foreground hover:text-foreground"
+              >
+                Voltar / Cancelar
+              </Button>
+            </div>
           </div>
         </div>
       )}

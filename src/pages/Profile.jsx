@@ -174,11 +174,12 @@ export default function Profile() {
   // Sync barber form
   useEffect(() => {
     if (barberProfile) {
-      setBarberForm({
+      setBarberForm(prev => ({
+        ...prev,
         name: barberProfile.name || "",
         bio: barberProfile.bio || "",
         specialties: barberProfile.specialties ? barberProfile.specialties.join(", ") : ""
-      });
+      }));
     } else if (user) {
       setBarberForm(prev => ({
         ...prev,
@@ -195,7 +196,7 @@ export default function Profile() {
 
   // Mutations
   const saveProfileMutation = useMutation({
-    mutationFn: async ({ clientId, clientData, profileId, profileData }) => {
+    mutationFn: async (/** @type {any} */ { clientId, clientData, profileId, profileData }) => {
       // 1. Update Client
       const updatedClient = await db.entities.Client.update(clientId, clientData);
 
@@ -1127,7 +1128,7 @@ export default function Profile() {
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Histórico de vínculos</h4>
               {barberHistory
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map(h => (
                 <div key={h.id} className="flex items-start gap-3 p-4 rounded-xl bg-card border border-border/50">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${h.action === 'accepted' ? 'bg-blue-500/20' : 'bg-red-500/20'}`}>

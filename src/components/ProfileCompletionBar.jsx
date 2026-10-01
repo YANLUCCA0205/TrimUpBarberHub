@@ -52,6 +52,7 @@ export default function ProfileCompletionBar({ client, profile }) {
         </div>
       </div>
 
+      {/* @ts-ignore - shadcn/ui component */}
       <Progress value={percentage} className="h-2 mb-3" />
 
       {percentage < 100 && (

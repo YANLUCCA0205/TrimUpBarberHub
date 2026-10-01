@@ -3,13 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEntityQuery, useEntityMutation } from "@/hooks/useSupabaseQuery";
 
 import { useAuth } from "@/lib/AuthContext";
-import { Plus, ChevronLeft, ChevronRight, Check, X, Edit2, Clock } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Check, X, Edit2, Clock, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { generateWhatsAppLink } from "@/lib/notifications";
 
 const STATUS_OPTIONS = [
   { value: "agendado",     label: "Agendado",        color: "bg-blue-500/10 text-blue-400" },
@@ -121,7 +122,7 @@ function WeekView({ weekDates, filteredAppts, openEdit }) {
   );
 }
 
-function DayView({ filteredAppts, openEdit, updateStatus, openNew }) {
+function DayView({ filteredAppts, clients = [], shop, openEdit, updateStatus, openNew }) {
   if (filteredAppts.length === 0) {
     return (
       <div className="text-center py-16 text-muted-foreground rounded-2xl bg-card/50 border border-border/50">
@@ -135,14 +136,57 @@ function DayView({ filteredAppts, openEdit, updateStatus, openNew }) {
     <div className="space-y-2">
       {filteredAppts.map(a => {
         const st = STATUS_OPTIONS.find(s => s.value === a.status) || STATUS_OPTIONS[0];
+        
+        // Find matching CRM client record
+        const clientRec = clients?.find(c => 
+          (c.name && a.client_name && c.name.toLowerCase() === a.client_name.toLowerCase()) ||
+          (a.client_email && c.email && c.email.toLowerCase() === a.client_email.toLowerCase())
+        );
+        const phone = a.client_phone || clientRec?.whatsapp || clientRec?.phone;
+        const isFragile = clientRec ? !clientRec.profile_id : !a.client_id;
+
         return (
           <div key={a.id} className="flex items-center gap-3 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition-all group">
             <span className="text-sm font-mono text-muted-foreground w-12 flex-shrink-0">{a.time}</span>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm">{a.client_name || a.client_email}</p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-sm">{a.client_name || a.client_email}</p>
+                {isFragile ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-medium">
+                    Balcão
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
+                    App
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">{a.service_name}{a.price ? ` • R$${a.price}` : ""}{a.barber_name ? ` • ${a.barber_name}` : ""}</p>
               {a.notes && <p className="text-xs text-muted-foreground/60 mt-0.5 italic truncate">{a.notes}</p>}
             </div>
+
+            {phone && (
+              <a
+                href={generateWhatsAppLink({
+                  phone,
+                  clientName: a.client_name,
+                  serviceName: a.service_name,
+                  barberName: a.barber_name,
+                  shopName: shop?.name || "Barbearia",
+                  date: a.date,
+                  time: a.time,
+                  type: 'confirmation'
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Conversar com ${a.client_name} no WhatsApp`}
+                className="hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all border border-emerald-500/20"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </a>
+            )}
+
             <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${st.color}`}>{st.label}</span>
             <div className="hidden group-hover:flex items-center gap-1">
               {a.status !== "concluido" && (
@@ -215,6 +259,7 @@ export default function Agenda() {
   // React Query Mutations
   const createMutation = useEntityMutation('Appointment', 'create');
   const updateMutation = useEntityMutation('Appointment', 'update');
+  const createClientMutation = useEntityMutation('Client', 'create');
 
   const loading = loadingShops || loadingBarbers || loadingAppointments;
 
@@ -245,7 +290,13 @@ export default function Agenda() {
       return;
     }
     const barber = barbers.find(b => b.id === form.barber_id);
-    const data = { ...form, barber_name: barber?.name, client_email: form.client_email || "", shop_id: shop.id };
+    const data = {
+      ...form,
+      barber_name: barber?.name,
+      client_email: form.client_email || "",
+      client_phone: form.client_phone || "",
+      shop_id: shop.id
+    };
     
     try {
       if (editingAppt) {
@@ -253,6 +304,40 @@ export default function Agenda() {
         toast.success("Agendamento atualizado!");
       } else {
         await createMutation.mutateAsync(data);
+
+        // Auto-criação de Cadastro Frágil (Balcão) no CRM da Barbearia
+        if (form.client_name?.trim()) {
+          const cleanPhone = (val) => val ? val.replace(/\D/g, '') : '';
+          const inputPhone = cleanPhone(form.client_phone);
+          const inputEmail = form.client_email?.trim().toLowerCase();
+          const inputName = form.client_name.trim().toLowerCase();
+
+          const existingClient = clients.find(c => {
+            if (inputPhone && (cleanPhone(c.phone) === inputPhone || cleanPhone(c.whatsapp) === inputPhone)) return true;
+            if (inputEmail && c.email?.trim().toLowerCase() === inputEmail) return true;
+            return c.name?.trim().toLowerCase() === inputName;
+          });
+
+          if (!existingClient) {
+            try {
+              await createClientMutation.mutateAsync({
+                shop_id: shop.id,
+                profile_id: null, // Cadastro Frágil (Sem conta de app)
+                name: form.client_name.trim(),
+                phone: form.client_phone || "",
+                whatsapp: form.client_phone || "",
+                email: form.client_email || "",
+                source: "passagem",
+                total_visits: 1,
+                notes: form.notes ? `Agendamento balcão: ${form.notes}` : "Cadastro Frágil criado automaticamente via agendamento no balcão.",
+              });
+              queryClient.invalidateQueries({ queryKey: ['Client'] });
+            } catch (cErr) {
+              console.warn("Aviso ao auto-criar cadastro frágil:", cErr);
+            }
+          }
+        }
+
         toast.success("Agendamento criado!");
       }
       queryClient.invalidateQueries({ queryKey: ['Appointment'] });
@@ -295,18 +380,34 @@ export default function Agenda() {
     const clientMatches = clients
       .filter(c => c.name?.toLowerCase().includes(lv) || c.phone?.includes(val) || c.email?.toLowerCase().includes(lv))
       .slice(0, 5)
-      .map(c => ({ client_name: c.name, client_email: c.email, _phone: c.whatsapp || c.phone, _source: "crm" }));
+      .map(c => ({
+        client_name: c.name,
+        client_email: c.email,
+        client_phone: c.whatsapp || c.phone,
+        _source: "crm",
+        _isFragile: !c.profile_id
+      }));
     const seen = new Set(clientMatches.map(c => c.client_name?.toLowerCase()));
     const apptMatches = appointments
       .filter(a => a.client_name?.toLowerCase().includes(lv))
       .filter(a => { if (seen.has(a.client_name?.toLowerCase())) return false; seen.add(a.client_name?.toLowerCase()); return true; })
       .slice(0, 3)
-      .map(a => ({ client_name: a.client_name, client_email: a.client_email, _source: "historico" }));
+      .map(a => ({
+        client_name: a.client_name,
+        client_email: a.client_email,
+        client_phone: a.client_phone,
+        _source: "historico"
+      }));
     setClientSuggestions([...clientMatches, ...apptMatches]);
   }
 
   function selectClientSuggestion(c) {
-    setForm(f => ({ ...f, client_name: c.client_name, client_email: c.client_email || f.client_email }));
+    setForm(f => ({
+      ...f,
+      client_name: c.client_name,
+      client_email: c.client_email || f.client_email || "",
+      client_phone: c.client_phone || f.client_phone || "",
+    }));
     setClientSuggestions([]);
   }
 
@@ -450,6 +551,16 @@ export default function Agenda() {
             </div>
 
             <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Telefone / WhatsApp</Label>
+              <Input
+                placeholder="(11) 99999-9999"
+                value={form.client_phone || ""}
+                onChange={e => setForm(f => ({ ...f, client_phone: e.target.value }))}
+                className="bg-muted border-border/50 rounded-xl"
+              />
+            </div>
+
+            <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Email do cliente</Label>
               <Input value={form.client_email || ""} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))} className="bg-muted border-border/50 rounded-xl" />
             </div>
@@ -509,7 +620,14 @@ export default function Agenda() {
       ) : viewMode === 1 ? (
         <WeekView weekDates={weekDates} filteredAppts={filteredAppts} openEdit={openEdit} />
       ) : (
-        <DayView filteredAppts={filteredAppts} openEdit={openEdit} updateStatus={updateStatus} openNew={openNew} />
+        <DayView
+          filteredAppts={filteredAppts}
+          clients={clients}
+          shop={shop}
+          openEdit={openEdit}
+          updateStatus={updateStatus}
+          openNew={openNew}
+        />
       )}
     </div>
   );

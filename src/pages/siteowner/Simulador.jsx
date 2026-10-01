@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Monitor, User, Scissors, LayoutDashboard, FlaskConical, ChevronRight, AlertTriangle } from "lucide-react";
+import { Monitor, User, Scissors, LayoutDashboard, FlaskConical, ChevronRight, AlertTriangle, RotateCcw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { startSimulation, getSimulation, stopSimulation, ROLE_LABELS, ROLE_COLORS } from "@/lib/simulation";
+import { resetSandboxDb } from "@/lib/sandboxDb";
+import { toast } from "sonner";
 
 const ROLES = [
   {
@@ -69,24 +71,37 @@ export default function SiteOwnerSimulador() {
 
       {/* Active simulation warning */}
       {currentSim?.active && (
-        <div className="mb-6 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 flex items-center justify-between">
+        <div className="mb-6 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
             <div>
               <p className="text-sm font-medium text-amber-300">Simulação ativa: {ROLE_LABELS[currentSim.role]}</p>
-              <p className="text-xs text-muted-foreground">Você está em modo simulação. A interface está mostrando a perspectiva deste perfil.</p>
+              <p className="text-xs text-muted-foreground">Você está no ambiente Sandbox isolado. Nenhuma modificação afeta o banco PostgreSQL real.</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={exit} className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
-            Encerrar simulação
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                resetSandboxDb();
+                toast.success("Dados do Sandbox resetados!");
+              }}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Resetar Dados Mock
+            </Button>
+            <Button variant="outline" size="sm" onClick={exit} className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
+              Encerrar simulação
+            </Button>
+          </div>
         </div>
       )}
 
-      <div className="mb-4 p-4 rounded-xl bg-muted/20 border border-border/30 flex items-start gap-3">
-        <Monitor className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Ao entrar em modo simulação, toda a interface — navegação, menus, dashboards e permissões — será trocada para refletir exatamente o que aquela role enxerga. Nenhum dado real de clientes é utilizado.
+      <div className="mb-4 p-4 rounded-xl bg-muted/20 border border-emerald-500/20 bg-emerald-500/5 flex items-start gap-3">
+        <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-slate-300 leading-relaxed">
+          <strong className="text-emerald-400 font-semibold">Garantia de Isolamento Sandbox:</strong> Ao entrar em modo simulação, o sistema conecta-se automaticamente a uma base virtual mockada salva em seu navegador. Você pode agendar cortes, cadastrar serviços e testar permissões livremente sem poluir o banco de dados oficial de clientes.
         </p>
       </div>
 

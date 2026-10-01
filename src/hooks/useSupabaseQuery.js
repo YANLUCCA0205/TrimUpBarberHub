@@ -4,18 +4,19 @@ import db from '@/lib/db';
 /**
  * Hook para consultar uma lista de entidades com filtros opcionais
  * @param {string} entityName - Nome da entidade no db.entities
- * @param {Object} filters - Filtros a serem aplicados na consulta
+ * @param {Record<string, any>} filters - Filtros a serem aplicados na consulta
  * @param {Object} options - Opções adicionais (order, limit, enabled)
+ * @returns {import('@tanstack/react-query').UseQueryResult<any[], Error>}
  */
 export function useEntityQuery(entityName, filters = {}, options = {}) {
   const { order, limit, enabled = true, ...queryOptions } = options;
 
-  return useQuery({
+  return /** @type {any} */ (useQuery({
     queryKey: [entityName, JSON.stringify(filters), order, limit],
     queryFn: () => db.entities[entityName].filter(filters, order, limit),
     enabled,
     ...queryOptions,
-  });
+  }));
 }
 
 /**
@@ -23,13 +24,14 @@ export function useEntityQuery(entityName, filters = {}, options = {}) {
  * @param {string} entityName - Nome da entidade no db.entities
  * @param {string} id - ID da entidade
  * @param {Object} options - Opções adicionais do useQuery
+ * @returns {import('@tanstack/react-query').UseQueryResult<any, Error>}
  */
 export function useEntityGet(entityName, id, options = {}) {
   const { enabled = true, ...queryOptions } = options;
 
   return useQuery({
     queryKey: [entityName, id],
-    queryFn: () => db.entities[entityName].get(id),
+    queryFn: /** @returns {Promise<any>} */ () => db.entities[entityName].get(id),
     enabled: enabled && !!id,
     ...queryOptions,
   });
@@ -39,10 +41,12 @@ export function useEntityGet(entityName, id, options = {}) {
  * Hook genérico de mutação para entidades (create, update, delete)
  * @param {string} entityName - Nome da entidade no db.entities
  * @param {'create'|'update'|'delete'} operation - Tipo de operação
+ * @returns {import('@tanstack/react-query').UseMutationResult<any, Error, any>}
  */
 export function useEntityMutation(entityName, operation) {
   const queryClient = useQueryClient();
 
+  /** @type {Record<string, (arg: any) => Promise<any>>} */
   const mutationFns = {
     create: (data) => db.entities[entityName].create(data),
     update: ({ id, data }) => db.entities[entityName].update(id, data),
@@ -60,6 +64,7 @@ export function useEntityMutation(entityName, operation) {
 /**
  * Hook de conveniência para criar uma entidade
  * @param {string} entityName - Nome da entidade
+ * @returns {import('@tanstack/react-query').UseMutationResult<any, Error, any>}
  */
 export function useEntityCreate(entityName) {
   return useEntityMutation(entityName, 'create');
@@ -68,6 +73,7 @@ export function useEntityCreate(entityName) {
 /**
  * Hook de conveniência para atualizar uma entidade
  * @param {string} entityName - Nome da entidade
+ * @returns {import('@tanstack/react-query').UseMutationResult<any, Error, any>}
  */
 export function useEntityUpdate(entityName) {
   return useEntityMutation(entityName, 'update');
@@ -76,6 +82,7 @@ export function useEntityUpdate(entityName) {
 /**
  * Hook de conveniência para deletar uma entidade
  * @param {string} entityName - Nome da entidade
+ * @returns {import('@tanstack/react-query').UseMutationResult<any, Error, any>}
  */
 export function useEntityDelete(entityName) {
   return useEntityMutation(entityName, 'delete');

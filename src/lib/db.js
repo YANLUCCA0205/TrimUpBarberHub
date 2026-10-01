@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { getSimulation } from './simulation';
+import { createSandboxEntityHandler, resetSandboxDb, getSandboxData } from './sandboxDb';
 
 const tableMap = {
   Appointment: 'appointments',
@@ -13,7 +15,8 @@ const tableMap = {
   BarberLinkHistory: 'barber_link_history',
   BarberUnlinkRequest: 'barber_unlink_requests',
   Notification: 'notifications',
-  NotificationType: 'notification_types'
+  NotificationType: 'notification_types',
+  Profile: 'profiles'
 };
 
 // Helper function to map and translate filters
@@ -354,25 +357,26 @@ export const db = {
     }
   },
 
-  /**
-   * @type {Record<string, {
-   *   filter: (filters?: any, order?: string | null, limit?: number | null) => Promise<any[]>,
-   *   list: (order?: string | null, limit?: number | null) => Promise<any[]>,
-   *   get: (id: any) => Promise<any>,
-   *   create: (data?: any) => Promise<any>,
-   *   update: (id: any, data?: any) => Promise<any>,
-   *   delete: (id: any) => Promise<boolean>
-   * }>}
-   */
+  /** @type {any} */
   entities: new Proxy(entityHandlerCache, {
     get: (target, name) => {
       if (typeof name !== 'string') return undefined;
+      const sim = getSimulation();
+      if (sim?.active) {
+        const tableName = tableMap[name] || name.toLowerCase();
+        return createSandboxEntityHandler(tableName);
+      }
       if (!target[name]) {
         target[name] = createEntityHandler(name);
       }
       return target[name];
     }
   }),
+
+  sandbox: {
+    reset: resetSandboxDb,
+    getData: getSandboxData
+  },
 
   integrations: {
     Core: {

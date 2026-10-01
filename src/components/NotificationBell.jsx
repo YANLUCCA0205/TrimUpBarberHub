@@ -85,6 +85,7 @@ export default function NotificationBell() {
           )}
         </button>
       </PopoverTrigger>
+      {/* @ts-ignore - shadcn/ui component */}
       <PopoverContent
         align="end"
         sideOffset={8}
